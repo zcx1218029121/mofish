@@ -1,10 +1,7 @@
+import { BookReader } from "./components/BookReader";
+
 function App() {
-  return (
-    <div className="container">
-      <h1>摸鱼</h1>
-      <p>Loading...</p>
-    </div>
-  );
+  return <BookReader />;
 }
 
 export default App;
