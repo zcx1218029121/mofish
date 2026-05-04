@@ -17,6 +17,14 @@ export interface Tag {
   type: "status" | "genre" | "custom";
 }
 
+export interface Bookmark {
+  id: string;
+  bookId: string;
+  position: number;
+  note: string;
+  createdAt: number;
+}
+
 let db: Database | null = null;
 
 export async function initDatabase(): Promise<Database> {
@@ -52,6 +60,17 @@ export async function initDatabase(): Promise<Database> {
       PRIMARY KEY (book_id, tag_id),
       FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE,
       FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
+    )
+  `);
+
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS bookmarks (
+      id TEXT PRIMARY KEY,
+      book_id TEXT NOT NULL,
+      position INTEGER NOT NULL,
+      note TEXT DEFAULT '',
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
     )
   `);
 
@@ -180,5 +199,29 @@ export async function updateBookTags(bookId: string, tagIds: string[]): Promise<
 export async function deleteBook(id: string): Promise<void> {
   const database = await initDatabase();
   await database.execute(`DELETE FROM book_tags WHERE book_id = $1`, [id]);
+  await database.execute(`DELETE FROM bookmarks WHERE book_id = $1`, [id]);
   await database.execute(`DELETE FROM books WHERE id = $1`, [id]);
+}
+
+export async function addBookmark(bookId: string, position: number, note: string = ""): Promise<string> {
+  const database = await initDatabase();
+  const id = crypto.randomUUID();
+  await database.execute(
+    `INSERT INTO bookmarks (id, book_id, position, note, created_at) VALUES ($1, $2, $3, $4, $5)`,
+    [id, bookId, position, note, Date.now()]
+  );
+  return id;
+}
+
+export async function getBookmarks(bookId: string): Promise<Bookmark[]> {
+  const database = await initDatabase();
+  return database.select<Bookmark[]>(
+    `SELECT id, book_id as bookId, position, note, created_at as createdAt FROM bookmarks WHERE book_id = $1 ORDER BY created_at DESC`,
+    [bookId]
+  );
+}
+
+export async function deleteBookmark(id: string): Promise<void> {
+  const database = await initDatabase();
+  await database.execute(`DELETE FROM bookmarks WHERE id = $1`, [id]);
 }

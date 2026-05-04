@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { readTextFile } from "@tauri-apps/plugin-fs";
-import { updateBookPosition } from "../db";
+import { updateBookPosition, addBookmark, getBookmarks, deleteBookmark, Bookmark } from "../db";
 
 interface BookReaderProps {
   bookPath: string;
@@ -15,6 +15,10 @@ export function BookReader({ bookPath, bookId, onBack, className = "" }: BookRea
   const [showStatus, setShowStatus] = useState(true);
   const [showProgress, setShowProgress] = useState(true);
   const [showHelp, setShowHelp] = useState(false);
+  const [showBookmarks, setShowBookmarks] = useState(false);
+  const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
+  const [bookmarkNote, setBookmarkNote] = useState("");
+  const [showBookmarkInput, setShowBookmarkInput] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const hasLoadedRef = useRef(false);
@@ -31,6 +35,11 @@ export function BookReader({ bookPath, bookId, onBack, className = "" }: BookRea
         if (containerRef.current) {
           containerRef.current.scrollTop = 0;
         }
+        // Load bookmarks if book has ID
+        if (bookId) {
+          const loadedBookmarks = await getBookmarks(bookId);
+          setBookmarks(loadedBookmarks);
+        }
       } catch (err) {
         console.error("Failed to load book:", err);
       }
@@ -39,7 +48,7 @@ export function BookReader({ bookPath, bookId, onBack, className = "" }: BookRea
     return () => {
       hasLoadedRef.current = false;
     };
-  }, [bookPath]);
+  }, [bookPath, bookId]);
 
   // Save position on unmount or hide
   useEffect(() => {
@@ -62,6 +71,29 @@ export function BookReader({ bookPath, bookId, onBack, className = "" }: BookRea
 
     return () => clearInterval(interval);
   }, [bookId]);
+
+  const handleAddBookmark = async () => {
+    if (!bookId || !containerRef.current) return;
+    const position = containerRef.current.scrollTop;
+    await addBookmark(bookId, position, bookmarkNote);
+    setBookmarkNote("");
+    setShowBookmarkInput(false);
+    const loadedBookmarks = await getBookmarks(bookId);
+    setBookmarks(loadedBookmarks);
+  };
+
+  const handleDeleteBookmark = async (id: string) => {
+    await deleteBookmark(id);
+    const loadedBookmarks = await getBookmarks(bookId);
+    setBookmarks(loadedBookmarks);
+  };
+
+  const handleJumpToBookmark = (position: number) => {
+    if (containerRef.current) {
+      containerRef.current.scrollTop = position;
+    }
+    setShowBookmarks(false);
+  };
 
   // Handle j/k scrolling
   useEffect(() => {
@@ -113,16 +145,33 @@ export function BookReader({ bookPath, bookId, onBack, className = "" }: BookRea
           e.preventDefault();
           setShowProgress((p) => !p);
           break;
+        case "m":
+          e.preventDefault();
+          if (bookId) {
+            setShowBookmarkInput(true);
+          }
+          break;
+        case "b":
+          e.preventDefault();
+          setShowBookmarks((s) => !s);
+          break;
         case "Escape":
           e.preventDefault();
-          onBack();
+          if (showBookmarkInput) {
+            setShowBookmarkInput(false);
+            setBookmarkNote("");
+          } else if (showBookmarks) {
+            setShowBookmarks(false);
+          } else {
+            onBack();
+          }
           break;
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [content, onBack]);
+  }, [content, onBack, bookId, showBookmarkInput, showBookmarks]);
 
   const scrollBy = useCallback((delta: number) => {
     if (containerRef.current) {
@@ -140,6 +189,11 @@ export function BookReader({ bookPath, bookId, onBack, className = "" }: BookRea
   const getBookName = () => {
     const parts = bookPath.split("/");
     return parts[parts.length - 1].replace(".txt", "");
+  };
+
+  const formatTime = (timestamp: number) => {
+    const date = new Date(timestamp);
+    return `${date.getMonth() + 1}/${date.getDate()} ${date.getHours()}:${String(date.getMinutes()).padStart(2, "0")}`;
   };
 
   if (!content) {
@@ -191,11 +245,55 @@ export function BookReader({ bookPath, bookId, onBack, className = "" }: BookRea
             <li><kbd>j</kbd> / <kbd>k</kbd> — 上/下滚动</li>
             <li><kbd>J</kbd> / <kbd>K</kbd> 或 <kbd>空格</kbd> — 快速滚动</li>
             <li><kbd>+</kbd> / <kbd>-</kbd> — 增大/减小字体</li>
+            <li><kbd>m</kbd> — 添加书签</li>
+            <li><kbd>b</kbd> — 显示/隐藏书签列表</li>
             <li><kbd>s</kbd> — 显示/隐藏状态栏</li>
             <li><kbd>p</kbd> — 显示/隐藏进度条</li>
             <li><kbd>Esc</kbd> — 返回书库</li>
             <li><kbd>?</kbd> — 显示/隐藏帮助</li>
           </ul>
+        </div>
+      )}
+
+      {showBookmarkInput && (
+        <div className="bookmark-input-overlay">
+          <div className="bookmark-input-panel">
+            <h3>添加书签</h3>
+            <input
+              type="text"
+              placeholder="书签备注（可选）"
+              value={bookmarkNote}
+              onChange={(e) => setBookmarkNote(e.target.value)}
+              autoFocus
+            />
+            <div className="bookmark-actions">
+              <button onClick={handleAddBookmark}>保存</button>
+              <button onClick={() => { setShowBookmarkInput(false); setBookmarkNote(""); }}>取消</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showBookmarks && (
+        <div className="bookmarks-panel">
+          <h3>书签列表</h3>
+          {bookmarks.length === 0 ? (
+            <p className="no-bookmarks">暂无书签，按 m 添加</p>
+          ) : (
+            <ul className="bookmarks-list">
+              {bookmarks.map((bm) => (
+                <li key={bm.id}>
+                  <div className="bookmark-item" onClick={() => handleJumpToBookmark(bm.position)}>
+                    <span className="bookmark-pos">{Math.round((bm.position / (containerRef.current?.scrollHeight || 1)) * 100)}%</span>
+                    <span className="bookmark-note">{bm.note || "无备注"}</span>
+                    <span className="bookmark-time">{formatTime(bm.createdAt)}</span>
+                  </div>
+                  <button className="delete-bookmark" onClick={() => handleDeleteBookmark(bm.id)}>×</button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <button className="close-bookmarks" onClick={() => setShowBookmarks(false)}>关闭</button>
         </div>
       )}
     </div>
