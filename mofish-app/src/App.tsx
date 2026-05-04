@@ -6,6 +6,7 @@ import { TauriBookRepository } from "./adapters/TauriBookRepository";
 import { TauriTagRepository } from "./adapters/TauriTagRepository";
 import { TauriBookmarkRepository } from "./adapters/TauriBookmarkRepository";
 import { TauriFileSystem } from "./adapters/TauriFileSystem";
+import { LocalStorageBubbleConfig } from "./adapters/LocalStorageBubbleConfig";
 import { BookDTO } from "./domain/models";
 
 type View = "bubble" | "library" | "reader";
@@ -20,6 +21,7 @@ const bookRepository = new TauriBookRepository();
 const tagRepository = new TauriTagRepository();
 const bookmarkRepository = new TauriBookmarkRepository();
 const fileSystem = new TauriFileSystem();
+const configStore = new LocalStorageBubbleConfig();
 
 function App() {
   const [view, setView] = useState<View>("bubble");
@@ -70,7 +72,7 @@ function App() {
   if (view === "bubble") {
     return (
       <>
-        <BubbleSettings />
+        <BubbleSettings configStore={configStore} />
         <div
           style={{
             position: "fixed",

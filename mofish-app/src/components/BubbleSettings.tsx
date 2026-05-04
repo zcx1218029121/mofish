@@ -1,19 +1,11 @@
 import { useState, useEffect } from "react";
 import { getCurrentWindow, PhysicalPosition, PhysicalSize } from "@tauri-apps/api/window";
+import { BubbleConfigStore, BubbleConfig } from "../domain/ports/BubbleConfigStore";
 
 interface BubbleSettingsProps {
+  configStore: BubbleConfigStore;
   className?: string;
 }
-
-interface BubbleConfig {
-  opacity: number;
-  borderRadius: number;
-  width: number;
-  height: number;
-  color: string;
-}
-
-const STORAGE_KEY = "mofish-bubble-config";
 
 const DEFAULT_CONFIG: BubbleConfig = {
   opacity: 0.85,
@@ -23,27 +15,34 @@ const DEFAULT_CONFIG: BubbleConfig = {
   color: "rgba(0, 0, 0, 1)",
 };
 
-export function BubbleSettings({ className = "" }: BubbleSettingsProps) {
-  const [config, setConfig] = useState<BubbleConfig>(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        return { ...DEFAULT_CONFIG, ...JSON.parse(stored) };
-      }
-    } catch {}
-    return DEFAULT_CONFIG;
-  });
-
+export function BubbleSettings({ configStore, className = "" }: BubbleSettingsProps) {
+  const [config, setConfig] = useState<BubbleConfig>(DEFAULT_CONFIG);
   const [position, setPosition] = useState({ x: 100, y: 100 });
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [isLoaded, setIsLoaded] = useState(false);
 
+  // Load config on mount
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
+    const load = async () => {
+      const stored = await configStore.load();
+      if (stored) {
+        setConfig(stored);
+      }
+      setIsLoaded(true);
+    };
+    load();
+  }, []);
+
+  // Save config when changed
+  useEffect(() => {
+    if (!isLoaded) return;
+    configStore.save(config);
     applyConfig(config);
-  }, [config]);
+  }, [config, isLoaded]);
 
   useEffect(() => {
+    if (!isLoaded) return;
     const applyInitial = async () => {
       try {
         const win = getCurrentWindow();
@@ -55,7 +54,7 @@ export function BubbleSettings({ className = "" }: BubbleSettingsProps) {
       }
     };
     applyInitial();
-  }, []);
+  }, [isLoaded]);
 
   const applyConfig = async (cfg: BubbleConfig) => {
     try {
