@@ -14,6 +14,7 @@ import {
   Book,
   Tag,
 } from "../db";
+import { searchBooks } from "../pinyin";
 
 interface BookLibraryProps {
   onSelectBook: (book: Book) => void;
@@ -38,19 +39,12 @@ export function BookLibrary({ onSelectBook, className = "" }: BookLibraryProps) 
     });
   }, []);
 
-  const filteredBooks = books.filter((book) => {
-    // Filter by search query
-    if (searchQuery && !book.title.toLowerCase().includes(searchQuery.toLowerCase())) {
-      return false;
-    }
-    // Filter by selected tags
-    if (selectedTags.length > 0) {
-      // Book must have at least one of the selected tags
-      const hasTag = selectedTags.some((tag) => book.tags.includes(tag));
-      if (!hasTag) return false;
-    }
-    return true;
-  });
+  // First filter by tags, then by search query
+  const tagFilteredBooks = selectedTags.length > 0
+    ? books.filter((book) => selectedTags.some((tag) => book.tags.includes(tag)))
+    : books;
+
+  const filteredBooks = searchQuery ? searchBooks(tagFilteredBooks, searchQuery) : tagFilteredBooks;
 
   const handleScanFolder = async () => {
     try {
