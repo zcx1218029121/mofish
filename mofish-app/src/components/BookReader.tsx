@@ -1,30 +1,73 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { open } from "@tauri-apps/plugin-dialog";
 import { readTextFile } from "@tauri-apps/plugin-fs";
+import { updateBookPosition } from "../db";
 
 interface BookReaderProps {
+  bookPath: string;
+  bookId: string;
+  onBack: () => void;
   className?: string;
 }
 
-export function BookReader({ className = "" }: BookReaderProps) {
-  const [bookPath, setBookPath] = useState<string | null>(null);
+export function BookReader({ bookPath, bookId, onBack, className = "" }: BookReaderProps) {
   const [content, setContent] = useState<string>("");
-  const [scrollPosition, setScrollPosition] = useState(0);
   const [fontSize, setFontSize] = useState(18);
   const [showStatus, setShowStatus] = useState(true);
   const [showProgress, setShowProgress] = useState(true);
   const [showHelp, setShowHelp] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
+  const hasLoadedRef = useRef(false);
 
-  const SCROLL_STEP = 100; // pixels per j/k press
+  const SCROLL_STEP = 100;
+
+  // Load book content
+  useEffect(() => {
+    const loadBook = async () => {
+      try {
+        const text = await readTextFile(bookPath);
+        setContent(text);
+        hasLoadedRef.current = true;
+        if (containerRef.current) {
+          containerRef.current.scrollTop = 0;
+        }
+      } catch (err) {
+        console.error("Failed to load book:", err);
+      }
+    };
+    loadBook();
+    return () => {
+      hasLoadedRef.current = false;
+    };
+  }, [bookPath]);
+
+  // Save position on unmount or hide
+  useEffect(() => {
+    return () => {
+      if (hasLoadedRef.current && containerRef.current) {
+        const position = containerRef.current.scrollTop;
+        updateBookPosition(bookId, position);
+      }
+    };
+  }, [bookId]);
+
+  // Save position periodically
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (hasLoadedRef.current && containerRef.current) {
+        const position = containerRef.current.scrollTop;
+        updateBookPosition(bookId, position);
+      }
+    }, 10000); // Save every 10 seconds
+
+    return () => clearInterval(interval);
+  }, [bookId]);
 
   // Handle j/k scrolling
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!content) return;
 
-      // Don't handle if user is typing in an input
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
         return;
       }
@@ -70,45 +113,22 @@ export function BookReader({ className = "" }: BookReaderProps) {
           e.preventDefault();
           setShowProgress((p) => !p);
           break;
+        case "Escape":
+          e.preventDefault();
+          onBack();
+          break;
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [content, scrollPosition]);
+  }, [content, onBack]);
 
   const scrollBy = useCallback((delta: number) => {
     if (containerRef.current) {
       containerRef.current.scrollTop += delta;
-      setScrollPosition(containerRef.current.scrollTop);
     }
   }, []);
-
-  const openBook = async () => {
-    try {
-      const selected = await open({
-        multiple: false,
-        filters: [
-          {
-            name: "Text Files",
-            extensions: ["txt"],
-          },
-        ],
-      });
-
-      if (selected && typeof selected === "string") {
-        setBookPath(selected);
-        const text = await readTextFile(selected);
-        setContent(text);
-        setScrollPosition(0);
-        if (containerRef.current) {
-          containerRef.current.scrollTop = 0;
-        }
-      }
-    } catch (err) {
-      console.error("Failed to open book:", err);
-    }
-  };
 
   const getProgress = () => {
     if (!containerRef.current) return 0;
@@ -118,7 +138,6 @@ export function BookReader({ className = "" }: BookReaderProps) {
   };
 
   const getBookName = () => {
-    if (!bookPath) return "";
     const parts = bookPath.split("/");
     return parts[parts.length - 1].replace(".txt", "");
   };
@@ -127,10 +146,7 @@ export function BookReader({ className = "" }: BookReaderProps) {
     return (
       <div className={`book-reader ${className}`}>
         <div className="book-empty">
-          <h2>摸鱼阅读</h2>
-          <button onClick={openBook} className="open-btn">
-            打开小说
-          </button>
+          <p>加载中...</p>
         </div>
       </div>
     );
@@ -140,6 +156,9 @@ export function BookReader({ className = "" }: BookReaderProps) {
     <div className={`book-reader ${className}`}>
       {showStatus && (
         <div className="reader-status">
+          <button className="back-btn" onClick={onBack}>
+            ← 返回
+          </button>
           <span className="book-title">{getBookName()}</span>
           <span className="progress-text">{getProgress()}%</span>
         </div>
@@ -153,7 +172,7 @@ export function BookReader({ className = "" }: BookReaderProps) {
         >
           {content.split("\n").map((line, i) => (
             <p key={i} className="text-line">
-              {line || " "}
+              {line || " "}
             </p>
           ))}
         </div>
@@ -161,10 +180,7 @@ export function BookReader({ className = "" }: BookReaderProps) {
 
       {showProgress && (
         <div className="reader-progress">
-          <div
-            className="progress-bar"
-            style={{ width: `${getProgress()}%` }}
-          />
+          <div className="progress-bar" style={{ width: `${getProgress()}%` }} />
         </div>
       )}
 
@@ -173,10 +189,11 @@ export function BookReader({ className = "" }: BookReaderProps) {
           <h3>快捷键</h3>
           <ul>
             <li><kbd>j</kbd> / <kbd>k</kbd> — 上/下滚动</li>
-            <li><kbd>J</kbd> / <kbd>K</kbd> 或 <kbd>空格</kbd> / <kbd>上</kbd> — 快速滚动</li>
+            <li><kbd>J</kbd> / <kbd>K</kbd> 或 <kbd>空格</kbd> — 快速滚动</li>
             <li><kbd>+</kbd> / <kbd>-</kbd> — 增大/减小字体</li>
             <li><kbd>s</kbd> — 显示/隐藏状态栏</li>
             <li><kbd>p</kbd> — 显示/隐藏进度条</li>
+            <li><kbd>Esc</kbd> — 返回书库</li>
             <li><kbd>?</kbd> — 显示/隐藏帮助</li>
           </ul>
         </div>
