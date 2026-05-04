@@ -1,22 +1,33 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { readTextFile } from "@tauri-apps/plugin-fs";
-import { updateBookPosition, addBookmark, getBookmarks, deleteBookmark, Bookmark } from "../db";
+import { BookmarkRepository } from "../domain/ports/BookmarkRepository";
+import { BookRepository } from "../domain/ports/BookRepository";
+import { BookmarkDTO } from "../domain/models";
 
 interface BookReaderProps {
   bookPath: string;
   bookId: string;
+  bookmarkRepository: BookmarkRepository;
+  bookRepository: BookRepository;
   onBack: () => void;
   className?: string;
 }
 
-export function BookReader({ bookPath, bookId, onBack, className = "" }: BookReaderProps) {
+export function BookReader({
+  bookPath,
+  bookId,
+  bookmarkRepository,
+  bookRepository,
+  onBack,
+  className = "",
+}: BookReaderProps) {
   const [content, setContent] = useState<string>("");
   const [fontSize, setFontSize] = useState(18);
   const [showStatus, setShowStatus] = useState(true);
   const [showProgress, setShowProgress] = useState(true);
   const [showHelp, setShowHelp] = useState(false);
   const [showBookmarks, setShowBookmarks] = useState(false);
-  const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
+  const [bookmarks, setBookmarks] = useState<BookmarkDTO[]>([]);
   const [bookmarkNote, setBookmarkNote] = useState("");
   const [showBookmarkInput, setShowBookmarkInput] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -24,6 +35,13 @@ export function BookReader({ bookPath, bookId, onBack, className = "" }: BookRea
   const hasLoadedRef = useRef(false);
 
   const SCROLL_STEP = 100;
+
+  const loadBookmarks = async () => {
+    if (bookId) {
+      const loadedBookmarks = await bookmarkRepository.getByBookId(bookId);
+      setBookmarks(loadedBookmarks);
+    }
+  };
 
   // Load book content
   useEffect(() => {
@@ -35,11 +53,7 @@ export function BookReader({ bookPath, bookId, onBack, className = "" }: BookRea
         if (containerRef.current) {
           containerRef.current.scrollTop = 0;
         }
-        // Load bookmarks if book has ID
-        if (bookId) {
-          const loadedBookmarks = await getBookmarks(bookId);
-          setBookmarks(loadedBookmarks);
-        }
+        await loadBookmarks();
       } catch (err) {
         console.error("Failed to load book:", err);
       }
@@ -53,39 +67,37 @@ export function BookReader({ bookPath, bookId, onBack, className = "" }: BookRea
   // Save position on unmount or hide
   useEffect(() => {
     return () => {
-      if (hasLoadedRef.current && containerRef.current) {
+      if (hasLoadedRef.current && containerRef.current && bookId) {
         const position = containerRef.current.scrollTop;
-        updateBookPosition(bookId, position);
+        bookRepository.updatePosition(bookId, position);
       }
     };
-  }, [bookId]);
+  }, [bookId, bookRepository]);
 
   // Save position periodically
   useEffect(() => {
     const interval = setInterval(() => {
-      if (hasLoadedRef.current && containerRef.current) {
+      if (hasLoadedRef.current && containerRef.current && bookId) {
         const position = containerRef.current.scrollTop;
-        updateBookPosition(bookId, position);
+        bookRepository.updatePosition(bookId, position);
       }
     }, 10000); // Save every 10 seconds
 
     return () => clearInterval(interval);
-  }, [bookId]);
+  }, [bookId, bookRepository]);
 
   const handleAddBookmark = async () => {
     if (!bookId || !containerRef.current) return;
     const position = containerRef.current.scrollTop;
-    await addBookmark(bookId, position, bookmarkNote);
+    await bookmarkRepository.add(bookId, position, bookmarkNote);
     setBookmarkNote("");
     setShowBookmarkInput(false);
-    const loadedBookmarks = await getBookmarks(bookId);
-    setBookmarks(loadedBookmarks);
+    await loadBookmarks();
   };
 
   const handleDeleteBookmark = async (id: string) => {
-    await deleteBookmark(id);
-    const loadedBookmarks = await getBookmarks(bookId);
-    setBookmarks(loadedBookmarks);
+    await bookmarkRepository.delete(id);
+    await loadBookmarks();
   };
 
   const handleJumpToBookmark = (position: number) => {

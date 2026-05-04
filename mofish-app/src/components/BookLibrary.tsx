@@ -1,50 +1,57 @@
 import { useState, useEffect } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { readDir } from "@tauri-apps/plugin-fs";
-import {
-  initDatabase,
-  getAllBooks,
-  getAllTags,
-  addBook,
-  addTag,
-  deleteTag,
-  addTagToBook,
-  removeTagFromBook,
-  deleteBook,
-  Book,
-  Tag,
-} from "../db";
+import { BookRepository } from "../domain/ports/BookRepository";
+import { TagRepository } from "../domain/ports/TagRepository";
+import { BookDTO, TagDTO } from "../domain/models";
 import { searchBooks } from "../pinyin";
 
 interface BookLibraryProps {
-  onSelectBook: (book: Book) => void;
+  bookRepository: BookRepository;
+  tagRepository: TagRepository;
+  onSelectBook: (book: BookDTO) => void;
   onSelectBookPath: (path: string) => void;
   className?: string;
 }
 
-export function BookLibrary({ onSelectBook, className = "" }: BookLibraryProps) {
-  const [books, setBooks] = useState<Book[]>([]);
-  const [tags, setTags] = useState<Tag[]>([]);
+export function BookLibrary({
+  bookRepository,
+  tagRepository,
+  onSelectBook,
+  className = "",
+}: BookLibraryProps) {
+  const [books, setBooks] = useState<BookDTO[]>([]);
+  const [tags, setTags] = useState<TagDTO[]>([]);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [showTagManager, setShowTagManager] = useState(false);
   const [newTagName, setNewTagName] = useState("");
-  const [editingBook, setEditingBook] = useState<Book | null>(null);
+  const [editingBook, setEditingBook] = useState<BookDTO | null>(null);
+
+  const loadData = async () => {
+    const [loadedBooks, loadedTags] = await Promise.all([
+      bookRepository.getAll(),
+      tagRepository.getAll(),
+    ]);
+    setBooks(loadedBooks);
+    setTags(loadedTags);
+  };
 
   useEffect(() => {
-    initDatabase().then(async () => {
-      const [loadedBooks, loadedTags] = await Promise.all([getAllBooks(), getAllTags()]);
-      setBooks(loadedBooks);
-      setTags(loadedTags);
-    });
+    loadData();
   }, []);
 
   // First filter by tags, then by search query
-  const tagFilteredBooks = selectedTags.length > 0
-    ? books.filter((book) => selectedTags.some((tag) => book.tags.includes(tag)))
-    : books;
+  const tagFilteredBooks =
+    selectedTags.length > 0
+      ? books.filter((book) =>
+          selectedTags.some((tag) => book.tags.includes(tag))
+        )
+      : books;
 
-  const filteredBooks = searchQuery ? searchBooks(tagFilteredBooks, searchQuery) : tagFilteredBooks;
+  const filteredBooks = searchQuery
+    ? searchBooks(tagFilteredBooks, searchQuery)
+    : tagFilteredBooks;
 
   const handleScanFolder = async () => {
     try {
@@ -62,7 +69,7 @@ export function BookLibrary({ onSelectBook, className = "" }: BookLibraryProps) 
             const title = entry.name.replace(".txt", "");
             const fullPath = `${selected}/${entry.name}`;
             try {
-              await addBook(title, fullPath, "txt");
+              await bookRepository.add(title, fullPath, "txt");
               addedCount++;
             } catch (e) {
               // Book already exists, skip
@@ -70,8 +77,7 @@ export function BookLibrary({ onSelectBook, className = "" }: BookLibraryProps) 
           }
         }
 
-        const [loadedBooks] = await Promise.all([getAllBooks()]);
-        setBooks(loadedBooks);
+        await loadData();
         alert(`已扫描并添加 ${addedCount} 本书`);
       }
     } catch (err) {
@@ -89,9 +95,8 @@ export function BookLibrary({ onSelectBook, className = "" }: BookLibraryProps) 
       if (selected && typeof selected === "string") {
         const parts = selected.split("/");
         const title = parts[parts.length - 1].replace(".txt", "");
-        await addBook(title, selected, "txt");
-        const [loadedBooks] = await Promise.all([getAllBooks()]);
-        setBooks(loadedBooks);
+        await bookRepository.add(title, selected, "txt");
+        await loadData();
       }
     } catch (err) {
       console.error("Failed to add book:", err);
@@ -100,10 +105,9 @@ export function BookLibrary({ onSelectBook, className = "" }: BookLibraryProps) 
 
   const handleAddCustomTag = async () => {
     if (!newTagName.trim()) return;
-    await addTag(newTagName.trim(), "custom");
+    await tagRepository.add(newTagName.trim(), "custom");
     setNewTagName("");
-    const [loadedTags] = await Promise.all([getAllTags()]);
-    setTags(loadedTags);
+    await loadData();
   };
 
   const handleToggleTagFilter = (tagId: string) => {
@@ -112,26 +116,23 @@ export function BookLibrary({ onSelectBook, className = "" }: BookLibraryProps) 
     );
   };
 
-  const handleToggleBookTag = async (book: Book, tagId: string) => {
+  const handleToggleBookTag = async (book: BookDTO, tagId: string) => {
     if (book.tags.includes(tagId)) {
-      await removeTagFromBook(book.id, tagId);
+      await tagRepository.removeTagFromBook(book.id, tagId);
     } else {
-      await addTagToBook(book.id, tagId);
+      await tagRepository.addTagToBook(book.id, tagId);
     }
-    const [loadedBooks] = await Promise.all([getAllBooks()]);
-    setBooks(loadedBooks);
+    await loadData();
   };
 
   const handleDeleteTag = async (tagId: string) => {
-    await deleteTag(tagId);
-    const [loadedTags] = await Promise.all([getAllTags()]);
-    setTags(loadedTags);
+    await tagRepository.delete(tagId);
+    await loadData();
   };
 
   const handleDeleteBook = async (bookId: string) => {
-    await deleteBook(bookId);
-    const [loadedBooks] = await Promise.all([getAllBooks()]);
-    setBooks(loadedBooks);
+    await bookRepository.delete(bookId);
+    await loadData();
     setEditingBook(null);
   };
 

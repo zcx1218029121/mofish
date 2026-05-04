@@ -2,7 +2,10 @@ import { useState, useEffect } from "react";
 import { BookLibrary } from "./components/BookLibrary";
 import { BookReader } from "./components/BookReader";
 import { BubbleSettings } from "./components/BubbleSettings";
-import { Book } from "./db";
+import { TauriBookRepository } from "./adapters/TauriBookRepository";
+import { TauriTagRepository } from "./adapters/TauriTagRepository";
+import { TauriBookmarkRepository } from "./adapters/TauriBookmarkRepository";
+import { BookDTO } from "./domain/models";
 
 type View = "bubble" | "library" | "reader";
 
@@ -10,6 +13,11 @@ interface ActiveBook {
   path: string;
   id: string;
 }
+
+// Create repository instances
+const bookRepository = new TauriBookRepository();
+const tagRepository = new TauriTagRepository();
+const bookmarkRepository = new TauriBookmarkRepository();
 
 function App() {
   const [view, setView] = useState<View>("bubble");
@@ -38,7 +46,7 @@ function App() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [view]);
 
-  const handleSelectBook = (book: Book) => {
+  const handleSelectBook = (book: BookDTO) => {
     setActiveBook({ path: book.path, id: book.id });
     setView("reader");
   };
@@ -91,6 +99,8 @@ function App() {
   if (view === "library") {
     return (
       <BookLibrary
+        bookRepository={bookRepository}
+        tagRepository={tagRepository}
         onSelectBook={handleSelectBook}
         onSelectBookPath={handleSelectBookPath}
       />
@@ -102,6 +112,8 @@ function App() {
       <BookReader
         bookPath={activeBook.path}
         bookId={activeBook.id}
+        bookmarkRepository={bookmarkRepository}
+        bookRepository={bookRepository}
         onBack={handleBack}
       />
     );
