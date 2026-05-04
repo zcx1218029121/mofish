@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { readTextFile } from "@tauri-apps/plugin-fs";
+import { FileSystem } from "../domain/ports/FileSystem";
 import { BookmarkRepository } from "../domain/ports/BookmarkRepository";
 import { BookRepository } from "../domain/ports/BookRepository";
 import { BookmarkDTO } from "../domain/models";
@@ -9,6 +9,7 @@ interface BookReaderProps {
   bookId: string;
   bookmarkRepository: BookmarkRepository;
   bookRepository: BookRepository;
+  fileSystem: FileSystem;
   onBack: () => void;
   className?: string;
 }
@@ -18,6 +19,7 @@ export function BookReader({
   bookId,
   bookmarkRepository,
   bookRepository,
+  fileSystem,
   onBack,
   className = "",
 }: BookReaderProps) {
@@ -47,7 +49,7 @@ export function BookReader({
   useEffect(() => {
     const loadBook = async () => {
       try {
-        const text = await readTextFile(bookPath);
+        const text = await fileSystem.readTextFile(bookPath);
         setContent(text);
         hasLoadedRef.current = true;
         if (containerRef.current) {

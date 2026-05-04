@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
-import { open } from "@tauri-apps/plugin-dialog";
-import { readDir } from "@tauri-apps/plugin-fs";
+import { FileSystem } from "../domain/ports/FileSystem";
 import { BookRepository } from "../domain/ports/BookRepository";
 import { TagRepository } from "../domain/ports/TagRepository";
 import { BookDTO, TagDTO } from "../domain/models";
@@ -9,6 +8,7 @@ import { searchBooks } from "../pinyin";
 interface BookLibraryProps {
   bookRepository: BookRepository;
   tagRepository: TagRepository;
+  fileSystem: FileSystem;
   onSelectBook: (book: BookDTO) => void;
   onSelectBookPath: (path: string) => void;
   className?: string;
@@ -17,6 +17,7 @@ interface BookLibraryProps {
 export function BookLibrary({
   bookRepository,
   tagRepository,
+  fileSystem,
   onSelectBook,
   className = "",
 }: BookLibraryProps) {
@@ -55,21 +56,17 @@ export function BookLibrary({
 
   const handleScanFolder = async () => {
     try {
-      const selected = await open({
-        directory: true,
-        multiple: false,
-      });
+      const selected = await fileSystem.openFolderDialog();
 
-      if (selected && typeof selected === "string") {
-        const entries = await readDir(selected);
+      if (selected) {
+        const entries = await fileSystem.readDir(selected);
         let addedCount = 0;
 
         for (const entry of entries) {
-          if (entry.name && entry.name.endsWith(".txt")) {
+          if (entry.isFile && entry.name.endsWith(".txt")) {
             const title = entry.name.replace(".txt", "");
-            const fullPath = `${selected}/${entry.name}`;
             try {
-              await bookRepository.add(title, fullPath, "txt");
+              await bookRepository.add(title, entry.path, "txt");
               addedCount++;
             } catch (e) {
               // Book already exists, skip
@@ -87,12 +84,9 @@ export function BookLibrary({
 
   const handleAddSingleBook = async () => {
     try {
-      const selected = await open({
-        multiple: false,
-        filters: [{ name: "Text Files", extensions: ["txt"] }],
-      });
+      const selected = await fileSystem.openFileDialog();
 
-      if (selected && typeof selected === "string") {
+      if (selected) {
         const parts = selected.split("/");
         const title = parts[parts.length - 1].replace(".txt", "");
         await bookRepository.add(title, selected, "txt");

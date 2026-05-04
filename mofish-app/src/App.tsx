@@ -5,6 +5,7 @@ import { BubbleSettings } from "./components/BubbleSettings";
 import { TauriBookRepository } from "./adapters/TauriBookRepository";
 import { TauriTagRepository } from "./adapters/TauriTagRepository";
 import { TauriBookmarkRepository } from "./adapters/TauriBookmarkRepository";
+import { TauriFileSystem } from "./adapters/TauriFileSystem";
 import { BookDTO } from "./domain/models";
 
 type View = "bubble" | "library" | "reader";
@@ -18,6 +19,7 @@ interface ActiveBook {
 const bookRepository = new TauriBookRepository();
 const tagRepository = new TauriTagRepository();
 const bookmarkRepository = new TauriBookmarkRepository();
+const fileSystem = new TauriFileSystem();
 
 function App() {
   const [view, setView] = useState<View>("bubble");
@@ -101,6 +103,7 @@ function App() {
       <BookLibrary
         bookRepository={bookRepository}
         tagRepository={tagRepository}
+        fileSystem={fileSystem}
         onSelectBook={handleSelectBook}
         onSelectBookPath={handleSelectBookPath}
       />
@@ -114,6 +117,7 @@ function App() {
         bookId={activeBook.id}
         bookmarkRepository={bookmarkRepository}
         bookRepository={bookRepository}
+        fileSystem={fileSystem}
         onBack={handleBack}
       />
     );
