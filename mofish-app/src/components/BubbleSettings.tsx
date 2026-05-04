@@ -253,6 +253,7 @@ export function BubbleSettings({ className = "" }: BubbleSettingsProps) {
         <div style={{ fontSize: "11px", color: "#444", marginTop: "16px" }}>
           <p>快捷键:</p>
           <ul style={{ margin: "4px 0", paddingLeft: "16px" }}>
+            <li><kbd>Ctrl+Shift+H</kbd> - 全局隐藏（任何界面）</li>
             <li>Esc - 隐藏窗口</li>
             <li>Ctrl+, - 打开设置</li>
           </ul>
