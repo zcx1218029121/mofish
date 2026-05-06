@@ -3,6 +3,8 @@ use tauri::{Manager};
 mod cli;
 mod db;
 mod config;
+
+pub use cli::run_cli;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, Code, Modifiers, ShortcutState};
 
 #[tauri::command]
