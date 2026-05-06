@@ -25,6 +25,8 @@ clap = { version = "4", features = ["derive"] }
 colored = "2"
 rusqlite = { version = "0.31", features = ["bundled"] }
 dirs = "5"
+uuid = { version = "1.23.1", features = ["v4"] }
+chrono = "0.4.44"
 
 [profile.release]
 panic = "abort"
