@@ -1,6 +1,7 @@
 use rusqlite::{Connection, Result};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use std::sync::{Mutex, OnceLock};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Book {
@@ -22,19 +23,25 @@ pub struct Stock {
 }
 
 /// Returns the path to the database file: ~/.mofish/mofish.db
-pub fn get_db_path() -> PathBuf {
-    let home = dirs::home_dir().expect("Cannot find home directory");
+pub fn get_db_path() -> std::io::Result<PathBuf> {
+    let home = dirs::home_dir().ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::NotFound, "Cannot find home directory")
+    })?;
     let mofish_dir = home.join(".mofish");
-    mofish_dir.join("mofish.db")
+    Ok(mofish_dir.join("mofish.db"))
 }
 
 /// Initialize the database connection and create tables if they don't exist
 pub fn init_db() -> Result<Connection> {
-    let db_path = get_db_path();
+    let db_path = get_db_path().map_err(|e: std::io::Error| {
+        rusqlite::Error::InvalidPath(e.to_string().into())
+    })?;
 
     // Ensure the directory exists
     if let Some(parent) = db_path.parent() {
-        std::fs::create_dir_all(parent).expect("Cannot create .mofish directory");
+        std::fs::create_dir_all(parent).map_err(|e: std::io::Error| {
+            rusqlite::Error::InvalidPath(e.to_string().into())
+        })?;
     }
 
     let conn = Connection::open(&db_path)?;
@@ -90,74 +97,79 @@ pub fn init_db() -> Result<Connection> {
     Ok(conn)
 }
 
+/// Global lazy connection pool - wrapped in mutex since Connection is not Sync
+static DB_CONNECTION: std::sync::OnceLock<Mutex<Connection>> = std::sync::OnceLock::new();
+
+/// Get or create the cached database connection
+fn get_db_connection() -> Result<&'static Mutex<Connection>> {
+    let conn = DB_CONNECTION.get_or_init(|| {
+        // This should not fail in normal circumstances
+        // If init_db fails, we panic - but subsequent calls will reuse the initialized connection
+        // For actual error handling, callers should check init_db separately
+        Mutex::new(init_db().expect("Failed to initialize database"))
+    });
+    Ok(conn)
+}
+
+// Book row mapper - extracts a Book from a row
+fn row_to_book(row: &rusqlite::Row) -> rusqlite::Result<Book> {
+    Ok(Book {
+        id: row.get("id")?,
+        title: row.get("title")?,
+        path: row.get("path")?,
+        format: row.get("format")?,
+        added_at: row.get("added_at")?,
+        last_read_at: row.get("last_read_at")?,
+        last_position: row.get("last_position")?,
+        tags: row.get("tags")?,
+    })
+}
+
+// Stock row mapper - extracts a Stock from a row
+fn row_to_stock(row: &rusqlite::Row) -> rusqlite::Result<Stock> {
+    Ok(Stock {
+        id: row.get("id")?,
+        code: row.get("code")?,
+        name: row.get("name")?,
+    })
+}
+
 // Book CRUD functions
 
 /// Get all books from the database
 pub fn get_all_books() -> Result<Vec<Book>> {
-    let conn = init_db()?;
+    let conn_mutex = get_db_connection()?;
+    let conn = conn_mutex.lock().unwrap();
     let mut stmt = conn.prepare(
         "SELECT id, title, path, format, added_at, last_read_at, last_position, tags FROM books ORDER BY added_at DESC"
     )?;
 
-    let books = stmt.query_map([], |row| {
-        Ok(Book {
-            id: row.get(0)?,
-            title: row.get(1)?,
-            path: row.get(2)?,
-            format: row.get(3)?,
-            added_at: row.get(4)?,
-            last_read_at: row.get(5)?,
-            last_position: row.get(6)?,
-            tags: row.get(7)?,
-        })
-    })?.collect::<Result<Vec<_>>>()?;
-
+    let books = stmt.query_map([], row_to_book)?.collect::<Result<Vec<_>>>()?;
     Ok(books)
 }
 
 /// Search books by keyword in title
 pub fn search_books(keyword: &str) -> Result<Vec<Book>> {
-    let conn = init_db()?;
+    let conn_mutex = get_db_connection()?;
+    let conn = conn_mutex.lock().unwrap();
     let pattern = format!("%{}%", keyword);
     let mut stmt = conn.prepare(
         "SELECT id, title, path, format, added_at, last_read_at, last_position, tags FROM books WHERE title LIKE ? ORDER BY added_at DESC"
     )?;
 
-    let books = stmt.query_map([&pattern], |row| {
-        Ok(Book {
-            id: row.get(0)?,
-            title: row.get(1)?,
-            path: row.get(2)?,
-            format: row.get(3)?,
-            added_at: row.get(4)?,
-            last_read_at: row.get(5)?,
-            last_position: row.get(6)?,
-            tags: row.get(7)?,
-        })
-    })?.collect::<Result<Vec<_>>>()?;
-
+    let books = stmt.query_map([&pattern], row_to_book)?.collect::<Result<Vec<_>>>()?;
     Ok(books)
 }
 
 /// Get a book by its ID
 pub fn get_book_by_id(id: &str) -> Result<Option<Book>> {
-    let conn = init_db()?;
+    let conn_mutex = get_db_connection()?;
+    let conn = conn_mutex.lock().unwrap();
     let mut stmt = conn.prepare(
         "SELECT id, title, path, format, added_at, last_read_at, last_position, tags FROM books WHERE id = ?"
     )?;
 
-    let mut books = stmt.query_map([id], |row| {
-        Ok(Book {
-            id: row.get(0)?,
-            title: row.get(1)?,
-            path: row.get(2)?,
-            format: row.get(3)?,
-            added_at: row.get(4)?,
-            last_read_at: row.get(5)?,
-            last_position: row.get(6)?,
-            tags: row.get(7)?,
-        })
-    })?;
+    let mut books = stmt.query_map([id], row_to_book)?;
 
     match books.next() {
         Some(result) => Ok(Some(result?)),
@@ -167,7 +179,8 @@ pub fn get_book_by_id(id: &str) -> Result<Option<Book>> {
 
 /// Update the reading position of a book
 pub fn update_book_position(id: &str, position: i64) -> Result<()> {
-    let conn = init_db()?;
+    let conn_mutex = get_db_connection()?;
+    let conn = conn_mutex.lock().unwrap();
     let now = chrono::Utc::now().timestamp();
 
     conn.execute(
@@ -182,7 +195,8 @@ pub fn update_book_position(id: &str, position: i64) -> Result<()> {
 
 /// Add a new stock
 pub fn add_stock(code: &str, name: &str) -> Result<()> {
-    let conn = init_db()?;
+    let conn_mutex = get_db_connection()?;
+    let conn = conn_mutex.lock().unwrap();
     let id = uuid::Uuid::new_v4().to_string();
 
     conn.execute(
@@ -195,23 +209,18 @@ pub fn add_stock(code: &str, name: &str) -> Result<()> {
 
 /// Get all stocks
 pub fn get_all_stocks() -> Result<Vec<Stock>> {
-    let conn = init_db()?;
+    let conn_mutex = get_db_connection()?;
+    let conn = conn_mutex.lock().unwrap();
     let mut stmt = conn.prepare("SELECT id, code, name FROM stocks ORDER BY code")?;
 
-    let stocks = stmt.query_map([], |row| {
-        Ok(Stock {
-            id: row.get(0)?,
-            code: row.get(1)?,
-            name: row.get(2)?,
-        })
-    })?.collect::<Result<Vec<_>>>()?;
-
+    let stocks = stmt.query_map([], row_to_stock)?.collect::<Result<Vec<_>>>()?;
     Ok(stocks)
 }
 
 /// Delete a stock by ID
 pub fn delete_stock(id: &str) -> Result<()> {
-    let conn = init_db()?;
+    let conn_mutex = get_db_connection()?;
+    let conn = conn_mutex.lock().unwrap();
     conn.execute("DELETE FROM stocks WHERE id = ?", [id])?;
     Ok(())
 }
@@ -222,7 +231,7 @@ mod tests {
 
     #[test]
     fn test_get_db_path() {
-        let path = get_db_path();
+        let path = get_db_path().unwrap();
         assert!(path.to_str().unwrap().ends_with(".mofish/mofish.db"));
     }
 
@@ -239,6 +248,7 @@ mod tests {
             assert!(tables.contains(&"tags".to_string()));
             assert!(tables.contains(&"bookmarks".to_string()));
             assert!(tables.contains(&"stocks".to_string()));
+            drop(stmt);
         }
     }
 
@@ -278,7 +288,9 @@ mod tests {
         let title: String = stmt.query_row([&test_id], |row| row.get(0)).unwrap();
         assert_eq!(title, "Test Book");
 
-        // Clean up
+        // Clean up - explicitly close connection first
+        drop(stmt);
+        drop(conn);
         std::fs::remove_file(&temp_path).ok();
     }
 
@@ -311,7 +323,9 @@ mod tests {
         let name: String = stmt.query_row(["600000"], |row| row.get(0)).unwrap();
         assert_eq!(name, "Shanghai Stock");
 
-        // Clean up
+        // Clean up - explicitly close connection first
+        drop(stmt);
+        drop(conn);
         std::fs::remove_file(&temp_path).ok();
     }
 }
