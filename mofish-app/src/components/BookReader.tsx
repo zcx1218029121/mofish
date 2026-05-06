@@ -25,13 +25,13 @@ export function BookReader({
 }: BookReaderProps) {
   const [content, setContent] = useState<string>("");
   const [fontSize, setFontSize] = useState(18);
-  const [showStatus, setShowStatus] = useState(true);
   const [showProgress, setShowProgress] = useState(true);
   const [showHelp, setShowHelp] = useState(false);
   const [showBookmarks, setShowBookmarks] = useState(false);
   const [bookmarks, setBookmarks] = useState<BookmarkDTO[]>([]);
   const [bookmarkNote, setBookmarkNote] = useState("");
   const [showBookmarkInput, setShowBookmarkInput] = useState(false);
+  const [showControls, setShowControls] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const hasLoadedRef = useRef(false);
@@ -49,7 +49,9 @@ export function BookReader({
   useEffect(() => {
     const loadBook = async () => {
       try {
+        console.log("Loading book from path:", bookPath);
         const text = await fileSystem.readTextFile(bookPath);
+        console.log("Book loaded, length:", text.length);
         setContent(text);
         hasLoadedRef.current = true;
         if (containerRef.current) {
@@ -64,7 +66,7 @@ export function BookReader({
     return () => {
       hasLoadedRef.current = false;
     };
-  }, [bookPath, bookId]);
+  }, [bookPath, bookId, fileSystem]);
 
   // Save position on unmount or hide
   useEffect(() => {
@@ -151,10 +153,6 @@ export function BookReader({
           e.preventDefault();
           setShowHelp((h) => !h);
           break;
-        case "s":
-          e.preventDefault();
-          setShowStatus((s) => !s);
-          break;
         case "p":
           e.preventDefault();
           setShowProgress((p) => !p);
@@ -193,6 +191,27 @@ export function BookReader({
     }
   }, []);
 
+  const updateVisibleRange = useCallback(() => {
+    // Will be implemented in Task 2
+  }, []);
+
+  const handleScroll = useCallback(() => {
+    if (containerRef.current) {
+      const { scrollTop } = containerRef.current;
+      if (scrollTop > 10) {
+        setShowControls(true);
+      }
+      updateVisibleRange();
+    }
+  }, [updateVisibleRange]);
+
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (rect && e.clientY - rect.top < 50) {
+      setShowControls(true);
+    }
+  }, []);
+
   const getProgress = () => {
     if (!containerRef.current) return 0;
     const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
@@ -212,7 +231,7 @@ export function BookReader({
 
   if (!content) {
     return (
-      <div className={`book-reader ${className}`}>
+      <div className={`book-reader ${className}`} data-tauri-drag-region>
         <div className="book-empty">
           <p>加载中...</p>
         </div>
@@ -221,22 +240,55 @@ export function BookReader({
   }
 
   return (
-    <div className={`book-reader ${className}`}>
-      {showStatus && (
-        <div className="reader-status">
-          <button className="back-btn" onClick={onBack}>
-            ← 返回
-          </button>
-          <span className="book-title">{getBookName()}</span>
-          <span className="progress-text">{getProgress()}%</span>
-        </div>
-      )}
+    <div
+      className={`book-reader ${className}`}
+      data-tauri-drag-region
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        height: "100%",
+        backgroundColor: "transparent",
+        position: "relative",
+        overflow: "hidden",
+      }}
+    >
+      {/* 固定标题栏 - 独立于滚动容器 */}
+      <div
+        className="reader-status"
+        style={{
+          backgroundColor: "rgba(0, 0, 0, 0.6)",
+          opacity: showControls ? 1 : 0,
+          transition: "opacity 0.2s",
+          pointerEvents: showControls ? "auto" : "none",
+          flexShrink: 0,
+          zIndex: 10,
+        }}
+      >
+        <span className="book-title">{getBookName()}</span>
+        <span className="progress-text">{getProgress()}%</span>
+      </div>
 
-      <div ref={containerRef} className="reader-content">
+      {/* 滚动内容区 - 使用 relative 定位 */}
+      <div
+        ref={containerRef}
+        className="reader-content"
+        style={{
+          flex: 1,
+          overflowY: "auto",
+          backgroundColor: "transparent",
+          position: "relative",
+        }}
+        onScroll={handleScroll}
+        onMouseMove={handleMouseMove}
+      >
         <div
           ref={contentRef}
           className="reader-text"
-          style={{ fontSize: `${fontSize}px` }}
+          style={{
+            fontSize: `${fontSize}px`,
+            backgroundColor: "transparent",
+            padding: "20px 40px",
+          }}
         >
           {content.split("\n").map((line, i) => (
             <p key={i} className="text-line">
@@ -247,7 +299,7 @@ export function BookReader({
       </div>
 
       {showProgress && (
-        <div className="reader-progress">
+        <div className="reader-progress" style={{ opacity: showControls ? 1 : 0.3, transition: "opacity 0.2s" }}>
           <div className="progress-bar" style={{ width: `${getProgress()}%` }} />
         </div>
       )}
