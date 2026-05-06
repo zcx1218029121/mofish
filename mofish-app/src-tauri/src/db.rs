@@ -191,6 +191,35 @@ pub fn update_book_position(id: &str, position: i64) -> Result<()> {
     Ok(())
 }
 
+/// Add a new book to the library
+pub fn add_book(title: &str, path: &str, format: &str) -> Result<String> {
+    let conn_mutex = get_db_connection()?;
+    let conn = conn_mutex.lock().unwrap();
+    let id = uuid::Uuid::new_v4().to_string();
+    let now = chrono::Utc::now().timestamp();
+
+    conn.execute(
+        "INSERT INTO books (id, title, path, format, added_at, last_position, tags) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (&id, title, path, format, now, 0, "[]"),
+    )?;
+
+    Ok(id)
+}
+
+/// Check if a book with the given path already exists
+pub fn book_exists_by_path(path: &str) -> Result<bool> {
+    let conn_mutex = get_db_connection()?;
+    let conn = conn_mutex.lock().unwrap();
+
+    let count: i32 = conn.query_row(
+        "SELECT COUNT(*) FROM books WHERE path = ?",
+        [path],
+        |row| row.get(0),
+    )?;
+
+    Ok(count > 0)
+}
+
 // Stock CRUD functions
 
 /// Add a new stock

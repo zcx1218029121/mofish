@@ -34,6 +34,16 @@ enum BookAction {
         /// 搜索关键词
         keyword: String,
     },
+    /// 添加书籍
+    add {
+        /// 书籍文件路径
+        path: String,
+    },
+    /// 扫描目录添加书籍
+    scan {
+        /// 目录路径
+        path: String,
+    },
     /// 阅读书籍
     read {
         /// 书籍 ID
@@ -53,7 +63,8 @@ enum StockAction {
 }
 
 pub fn run_cli() {
-    let cli = Cli::parse();
+    let args: Vec<String> = std::env::args().collect();
+    let cli = Cli::parse_from(&args[1..]); // Skip ["mofish"] (cli prefix already checked in main)
 
     match cli.command {
         Some(Commands::book { action }) => match action {
@@ -62,6 +73,12 @@ pub fn run_cli() {
             }
             BookAction::search { keyword } => {
                 cli_cmds::book::search_books(&keyword);
+            }
+            BookAction::add { path } => {
+                cli_cmds::book::add_book(&path);
+            }
+            BookAction::scan { path } => {
+                cli_cmds::book::scan_dir(&path);
             }
             BookAction::read { book_id } => {
                 cli_cmds::read::read_book(&book_id);

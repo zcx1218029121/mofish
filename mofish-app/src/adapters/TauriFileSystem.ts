@@ -1,6 +1,6 @@
 import { FileSystem, FileEntry } from "../domain/ports/FileSystem";
 import { open } from "@tauri-apps/plugin-dialog";
-import { readDir, readTextFile } from "@tauri-apps/plugin-fs";
+import { readDir, readTextFile, readFile } from "@tauri-apps/plugin-fs";
 
 export class TauriFileSystem implements FileSystem {
   async openFolderDialog(): Promise<string | null> {
@@ -29,6 +29,28 @@ export class TauriFileSystem implements FileSystem {
   }
 
   async readTextFile(path: string): Promise<string> {
-    return readTextFile(path);
+    try {
+      // Try UTF-8 first
+      const text = await readTextFile(path);
+      // Check for garbled Chinese (common replacement character)
+      if (text.includes('�')) {
+        // Fallback to GBK
+        return await this.readWithEncoding(path, 'gbk');
+      }
+      return text;
+    } catch {
+      // If UTF-8 fails, try GBK
+      return await this.readWithEncoding(path, 'gbk');
+    }
+  }
+
+  private async readWithEncoding(path: string, encoding: string): Promise<string> {
+    const bytes = await readFile(path);
+    try {
+      const decoder = new TextDecoder(encoding);
+      return decoder.decode(new Uint8Array(bytes));
+    } catch {
+      return new TextDecoder('latin1').decode(new Uint8Array(bytes));
+    }
   }
 }

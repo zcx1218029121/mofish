@@ -1,15 +1,19 @@
 import { useState, useEffect } from "react";
 import { BookLibrary } from "./components/BookLibrary";
 import { BookReader } from "./components/BookReader";
+import { StockView } from "./components/StockView";
 import { BubbleSettings } from "./components/BubbleSettings";
+import { BubbleWindow } from "./components/BubbleWindow";
+import { BubbleHome } from "./components/BubbleHome";
 import { TauriBookRepository } from "./adapters/TauriBookRepository";
 import { TauriTagRepository } from "./adapters/TauriTagRepository";
 import { TauriBookmarkRepository } from "./adapters/TauriBookmarkRepository";
 import { TauriFileSystem } from "./adapters/TauriFileSystem";
+import { SinaStockRepository } from "./adapters/SinaStockRepository";
 import { LocalStorageBubbleConfig } from "./adapters/LocalStorageBubbleConfig";
 import { BookDTO } from "./domain/models";
 
-type View = "bubble" | "library" | "reader";
+type View = "home" | "library" | "reader" | "stock" | "settings";
 
 interface ActiveBook {
   path: string;
@@ -21,10 +25,11 @@ const bookRepository = new TauriBookRepository();
 const tagRepository = new TauriTagRepository();
 const bookmarkRepository = new TauriBookmarkRepository();
 const fileSystem = new TauriFileSystem();
+const stockRepository = new SinaStockRepository();
 const configStore = new LocalStorageBubbleConfig();
 
 function App() {
-  const [view, setView] = useState<View>("bubble");
+  const [view, setView] = useState<View>("home");
   const [activeBook, setActiveBook] = useState<ActiveBook | null>(null);
 
   // Handle global keyboard shortcuts
@@ -33,15 +38,14 @@ function App() {
       // Ctrl+, opens bubble settings
       if (e.ctrlKey && e.key === ",") {
         e.preventDefault();
-        setView("bubble");
+        setView("settings");
         return;
       }
 
       // Escape handling
       if (e.key === "Escape") {
-        if (view === "reader") {
-          setView("bubble");
-          setActiveBook(null);
+        if (view === "library" || view === "stock" || view === "settings") {
+          setView("home");
         }
       }
     };
@@ -61,7 +65,7 @@ function App() {
   };
 
   const handleBack = () => {
-    setView("bubble");
+    setView("home");
     setActiveBook(null);
   };
 
@@ -69,37 +73,40 @@ function App() {
     setView("library");
   };
 
-  if (view === "bubble") {
+  const handleOpenStock = () => {
+    setView("stock");
+  };
+
+  const handleOpenSettings = () => {
+    setView("settings");
+  };
+
+  // 首页：显示导航入口
+  if (view === "home") {
     return (
-      <>
-        <BubbleSettings configStore={configStore} />
-        <div
-          style={{
-            position: "fixed",
-            bottom: "20px",
-            right: "20px",
-            zIndex: 9999,
-          }}
-        >
-          <button
-            onClick={handleOpenLibrary}
-            style={{
-              padding: "8px 16px",
-              fontSize: "12px",
-              backgroundColor: "rgba(50, 50, 50, 0.9)",
-              color: "#fff",
-              border: "1px solid #555",
-              borderRadius: "4px",
-              cursor: "pointer",
-            }}
-          >
-            打开书库
-          </button>
-        </div>
-      </>
+      <BubbleWindow configStore={configStore} onOpenLibrary={handleOpenLibrary} onOpenSettings={handleOpenSettings}>
+        <BubbleHome configStore={configStore} onOpenLibrary={handleOpenLibrary} onOpenSettings={handleOpenSettings} onOpenStock={handleOpenStock} />
+      </BubbleWindow>
     );
   }
 
+  // 阅读器在气泡窗口中显示（透明模式）
+  if (view === "reader" && activeBook) {
+    return (
+      <BubbleWindow configStore={configStore} onOpenLibrary={handleOpenLibrary} onOpenSettings={handleOpenSettings} transparent={true}>
+        <BookReader
+          bookPath={activeBook.path}
+          bookId={activeBook.id}
+          bookmarkRepository={bookmarkRepository}
+          bookRepository={bookRepository}
+          fileSystem={fileSystem}
+          onBack={handleBack}
+        />
+      </BubbleWindow>
+    );
+  }
+
+  // 书库全屏显示（不带标题栏）
   if (view === "library") {
     return (
       <BookLibrary
@@ -112,16 +119,17 @@ function App() {
     );
   }
 
-  if (view === "reader" && activeBook) {
+  // 股票全屏显示（不带标题栏）
+  if (view === "stock") {
+    return <StockView stockRepository={stockRepository} onBack={handleBack} />;
+  }
+
+  // 设置在气泡窗口中显示
+  if (view === "settings") {
     return (
-      <BookReader
-        bookPath={activeBook.path}
-        bookId={activeBook.id}
-        bookmarkRepository={bookmarkRepository}
-        bookRepository={bookRepository}
-        fileSystem={fileSystem}
-        onBack={handleBack}
-      />
+      <BubbleWindow configStore={configStore} onOpenLibrary={handleOpenLibrary} onOpenSettings={handleOpenSettings}>
+        <BubbleSettings configStore={configStore} onOpenLibrary={handleOpenLibrary} onOpenStock={handleOpenStock} />
+      </BubbleWindow>
     );
   }
 

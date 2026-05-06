@@ -24,3 +24,12 @@ export interface BookmarkDTO {
 }
 
 export type TagType = "status" | "genre" | "custom";
+
+export interface StockDTO {
+  code: string;
+  name: string;
+  price: number;
+  change: number;
+  changePercent: number;
+  volume: number;
+}

@@ -170,10 +170,47 @@ src/
 
 ---
 
+## 双模式架构
+
+### Bubble 模式 vs CLI 模式
+
+| 模式 | 启动方式 | 交互界面 |
+|------|----------|----------|
+| Bubble 模式 | `mofish` | 透明气泡窗口，React 前端 |
+| CLI 模式 | `mofish cli` | 终端交互，Rust CLI |
+
+### 共享层
+
+两种模式共享同一套 domain/adapters：
+- `domain/models.ts` — 数据模型
+- `domain/ports/*Repository.ts` — 仓库接口
+- `adapters/*Repository.ts` — Tauri 适配器
+- `db.ts` — SQLite 操作
+
+### CLI 模式特点
+
+- Rust 实现，用 `clap` 解析子命令
+- 不创建 Tauri 窗口，直接执行命令退出
+- 阅读模式为固定高度分页（每页 N 行）
+- 输出带颜色格式化
+
+### CLI 命令设计
+
+```
+mofish cli book search <keyword>   # 搜索书籍
+mofish cli book list               # 列出书籍
+mofish cli book read <book_id>     # 阅读（分页）
+mofish cli stock add <code>        # 添加自选股
+mofish cli stock list              # 查看自选股
+```
+
+---
+
 ## 实施顺序
 
 1. **阶段一（数据层解耦）** — 创建接口 + Adapter，修改组件 props
 2. **阶段二（文件系统抽象）** — 接口 + Adapter 分离
 3. **阶段三（Bubble存储）** — 最后处理，可选
+4. **CLI 模式** — 新增阶段，实现双模式架构
 
 每个阶段完成后可独立测试。

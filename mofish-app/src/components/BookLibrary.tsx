@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { FileSystem } from "../domain/ports/FileSystem";
 import { BookRepository } from "../domain/ports/BookRepository";
 import { TagRepository } from "../domain/ports/TagRepository";
@@ -11,6 +12,7 @@ interface BookLibraryProps {
   fileSystem: FileSystem;
   onSelectBook: (book: BookDTO) => void;
   onSelectBookPath: (path: string) => void;
+  onBack?: () => void;
   className?: string;
 }
 
@@ -19,6 +21,7 @@ export function BookLibrary({
   tagRepository,
   fileSystem,
   onSelectBook,
+  onBack,
   className = "",
 }: BookLibraryProps) {
   const [books, setBooks] = useState<BookDTO[]>([]);
@@ -130,14 +133,74 @@ export function BookLibrary({
     setEditingBook(null);
   };
 
+  const handleClose = async () => {
+    try {
+      const win = getCurrentWindow();
+      await win.hide();
+    } catch (err) {
+      console.error("Failed to hide window:", err);
+    }
+  };
+
   const statusTags = tags.filter((t) => t.type === "status");
   const genreTags = tags.filter((t) => t.type === "genre");
   const customTags = tags.filter((t) => t.type === "custom");
 
   return (
     <div className={`book-library ${className}`}>
-      <div className="library-header">
-        <h2>书库</h2>
+      {/* 可拖拽标题栏 */}
+      <div
+        data-tauri-drag-region
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "8px 12px",
+          backgroundColor: "rgba(0, 0, 0, 0.6)",
+          borderBottom: "1px solid #333",
+          cursor: "move",
+          userSelect: "none",
+          WebkitUserSelect: "none",
+        }}
+      >
+        <span style={{ fontSize: "12px", color: "#888" }}>书库</span>
+        <div style={{ display: "flex", gap: "8px" }}>
+          {onBack && (
+            <button
+              onClick={onBack}
+              style={{
+                padding: "2px 8px",
+                fontSize: "11px",
+                backgroundColor: "rgba(60, 60, 60, 0.9)",
+                color: "#aaa",
+                border: "1px solid #555",
+                borderRadius: "4px",
+                cursor: "pointer",
+              }}
+            >
+              返回
+            </button>
+          )}
+          <button
+            onClick={handleClose}
+            style={{
+              width: "16px",
+              height: "16px",
+              borderRadius: "50%",
+              backgroundColor: "#e05050",
+              border: "none",
+              cursor: "pointer",
+              fontSize: "10px",
+              color: "#fff",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          />
+        </div>
+      </div>
+
+      <div className="library-header" style={{ padding: "8px 12px" }}>
         <div className="header-actions">
           <button onClick={handleAddSingleBook}>添加书籍</button>
           <button onClick={handleScanFolder}>扫描文件夹</button>
