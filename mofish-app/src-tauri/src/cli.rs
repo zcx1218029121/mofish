@@ -69,10 +69,10 @@ pub fn run_cli() {
         },
         Some(Commands::stock { action }) => match action {
             StockAction::add { code } => {
-                cli_cmds::stock::add_stock(&code);
+                let _ = cli_cmds::stock::add_stock(&code);
             }
             StockAction::list => {
-                cli_cmds::stock::list_stocks();
+                let _ = cli_cmds::stock::list_stocks();
             }
         },
         None => {

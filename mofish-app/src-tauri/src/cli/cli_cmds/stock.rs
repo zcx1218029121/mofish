@@ -21,11 +21,6 @@ fn validate_stock_code(code: &str) -> Result<(), String> {
 /// # Arguments
 /// * `code` - The stock code (e.g., "600000" for Shanghai, "000001" for Shenzhen)
 ///
-/// # Example
-/// ```
-/// add_stock("600000");
-/// ```
-///
 /// # Errors
 /// Returns an error message if:
 /// - The stock code is empty
