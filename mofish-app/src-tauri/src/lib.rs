@@ -1,6 +1,7 @@
 use tauri::{Manager};
 
 mod db;
+mod config;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, Code, Modifiers, ShortcutState};
 
 #[tauri::command]
