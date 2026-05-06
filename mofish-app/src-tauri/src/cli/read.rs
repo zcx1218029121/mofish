@@ -32,10 +32,21 @@ pub fn read_book(book_id: &str) {
         }
     };
 
+    let mut skipped_lines = 0;
     let lines: Vec<String> = io::BufReader::new(file)
         .lines()
-        .filter_map(|l| l.ok())
+        .filter_map(|l| match l {
+            Ok(line) => Some(line),
+            Err(e) => {
+                skipped_lines += 1;
+                eprintln!("Warning: Skipping corrupted line: {}", e);
+                None
+            }
+        })
         .collect();
+    if skipped_lines > 0 {
+        eprintln!("Warning: {} lines skipped due to read errors", skipped_lines);
+    }
 
     let total_lines = lines.len();
     let mut config = config::load_config().unwrap_or_else(|_| CliConfig::default());
@@ -72,7 +83,9 @@ pub fn read_book(book_id: &str) {
             "q" | "esc" => {
                 // 保存阅读位置
                 let position = current_page * page_size;
-                let _ = db::update_book_position(book_id, position as i64);
+                if let Err(e) = db::update_book_position(book_id, position as i64) {
+                    eprintln!("Warning: Failed to save reading position: {}", e);
+                }
                 println!("{}", "\n👋 Exiting reader. Position saved.\n".dimmed());
                 break;
             }
@@ -123,6 +136,56 @@ fn get_input() -> String {
     let stdin = io::stdin();
     let mut handle = stdin.lock();
     let mut input = String::new();
-    handle.read_line(&mut input).ok();
+    if let Err(e) = handle.read_line(&mut input) {
+        eprintln!("Warning: Failed to read input: {}", e);
+    }
     input.trim().to_lowercase()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::calculate_start_page;
+
+    #[test]
+    fn test_calculate_start_page_basic() {
+        // position 0, page_size 10, total_lines 100 -> page 0
+        assert_eq!(calculate_start_page(0, 10, 100), 0);
+    }
+
+    #[test]
+    fn test_calculate_start_page_mid_book() {
+        // position 50, page_size 10, total_lines 100 -> page 5
+        assert_eq!(calculate_start_page(50, 10, 100), 5);
+    }
+
+    #[test]
+    fn test_calculate_start_page_exceeds_total() {
+        // position 150, page_size 10, total_lines 100 -> page 10 (capped at total_lines/page_size)
+        assert_eq!(calculate_start_page(150, 10, 100), 10);
+    }
+
+    #[test]
+    fn test_calculate_start_page_zero_total_lines() {
+        // total_lines 0 should return 0 regardless of position
+        assert_eq!(calculate_start_page(0, 10, 0), 0);
+        assert_eq!(calculate_start_page(100, 10, 0), 0);
+    }
+
+    #[test]
+    fn test_calculate_start_page_exact_page_boundary() {
+        // position 90, page_size 10, total_lines 100 -> page 9
+        assert_eq!(calculate_start_page(90, 10, 100), 9);
+    }
+
+    #[test]
+    fn test_calculate_start_page_small_page_size() {
+        // position 5, page_size 2, total_lines 20 -> page 2
+        assert_eq!(calculate_start_page(5, 2, 20), 2);
+    }
+
+    #[test]
+    fn test_calculate_start_page_large_page_size() {
+        // position 50, page_size 50, total_lines 200 -> page 1
+        assert_eq!(calculate_start_page(50, 50, 200), 1);
+    }
 }
