@@ -47,16 +47,12 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            artifact: mofish-ubuntu
           - os: macos-latest
             target: x86_64-apple-darwin
-            artifact: mofish-macos-intel
           - os: macos-latest
             target: aarch64-apple-darwin
-            artifact: mofish-macos-arm
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            artifact: mofish-windows.exe
     steps:
       - uses: actions/checkout@v4
 
@@ -64,10 +60,11 @@ jobs:
         run: rustup target add ${{ matrix.target }}
 
       - name: Build release
-        run: |
-          cargo build -p mofish-cli --release --target ${{ matrix.target }}
-          mv target/${{ matrix.target }}/release/mofish-cli.exe target/${{ matrix.target }}/release/${{ matrix.artifact }} 2>/dev/null || true
-          mv target/${{ matrix.target }}/release/mofish target/${{ matrix.target }}/release/${{ matrix.artifact }} 2>/dev/null || true
+        run: cargo build -p mofish-cli --release --target ${{ matrix.target }}
+
+      - name: Rename artifact (Windows)
+        if: matrix.os == 'windows-latest'
+        run: Move-Item target/${{ matrix.target }}/release/mofish-cli.exe target/${{ matrix.target }}/release/mofish.exe
 
       - name: Upload Release Asset
         uses: softprops/action-gh-release@v2
@@ -77,6 +74,6 @@ jobs:
           draft: true
           prerelease: false
           files: |
-            target/${{ matrix.target }}/release/${{ matrix.artifact }}
+            target/${{ matrix.target }}/release/mofish${{ matrix.os == 'windows-latest' && '.exe' || '' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
