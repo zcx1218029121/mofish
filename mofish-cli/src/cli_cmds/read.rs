@@ -3,6 +3,8 @@ use std::io::{self, Read};
 use std::fs::File;
 use std::path::Path;
 use encoding_rs::*;
+
+#[cfg(unix)]
 use termios::{Termios, TCSANOW, TCSAFLUSH, tcsetattr};
 
 /// Read a book by ID (command-line reader, not TUI)
@@ -11,7 +13,7 @@ pub fn read_book(book_id: &str) {
     let book = match db::get_book_by_id(book_id) {
         Ok(Some(b)) => b,
         Ok(None) => {
-            println!("{}", "Book not found");
+            println!("Book not found");
             return;
         }
         Err(e) => {
@@ -159,61 +161,72 @@ fn clear_screen() {
 
 #[allow(dead_code)]
 fn get_input() -> String {
-    let stdin_fd = 0; // stdin
+    #[cfg(unix)]
+    {
+        let stdin_fd = 0; // stdin
 
-    // Save original terminal attributes
-    let orig_termios = Termios::from_fd(stdin_fd).ok();
+        // Save original terminal attributes
+        let orig_termios = Termios::from_fd(stdin_fd).ok();
 
-    // Set raw mode
-    if let Ok(mut termios) = Termios::from_fd(stdin_fd) {
-        termios.c_lflag &= !(termios::ICANON | termios::ECHO);
-        termios.c_cc[termios::VMIN] = 1;
-        termios.c_cc[termios::VTIME] = 0;
-        let _ = tcsetattr(stdin_fd, TCSANOW, &termios);
-    }
-
-    // Read single character
-    let mut buf = [0u8; 1];
-    let input = if io::stdin().read(&mut buf).is_ok() {
-        match buf[0] {
-            27 => {
-                let mut next_buf = [0u8; 1];
-                if io::stdin().read(&mut next_buf).is_ok() {
-                    match next_buf[0] {
-                        91 => {
-                            let mut third_buf = [0u8; 1];
-                            if io::stdin().read(&mut third_buf).is_ok() {
-                                match third_buf[0] {
-                                    65 => "k".to_string(),
-                                    66 => "j".to_string(),
-                                    _ => "esc".to_string(),
-                                }
-                            } else {
-                                "esc".to_string()
-                            }
-                        }
-                        _ => "esc".to_string(),
-                    }
-                } else {
-                    "esc".to_string()
-                }
-            }
-            b'j' | b'J' => "j".to_string(),
-            b'k' | b'K' => "k".to_string(),
-            b'h' | b'H' => "h".to_string(),
-            b'l' | b'L' => "l".to_string(),
-            b'q' | b'Q' => "q".to_string(),
-            b' ' => " ".to_string(),
-            10 => "enter".to_string(),
-            _ => format!("{}", buf[0] as char),
+        // Set raw mode
+        if let Ok(mut termios) = Termios::from_fd(stdin_fd) {
+            termios.c_lflag &= !(termios::ICANON | termios::ECHO);
+            termios.c_cc[termios::VMIN] = 1;
+            termios.c_cc[termios::VTIME] = 0;
+            let _ = tcsetattr(stdin_fd, TCSANOW, &termios);
         }
-    } else {
-        String::new()
-    };
 
-    if let Some(orig) = orig_termios {
-        let _ = tcsetattr(stdin_fd, TCSAFLUSH, &orig);
+        // Read single character
+        let mut buf = [0u8; 1];
+        let input = if io::stdin().read(&mut buf).is_ok() {
+            match buf[0] {
+                27 => {
+                    let mut next_buf = [0u8; 1];
+                    if io::stdin().read(&mut next_buf).is_ok() {
+                        match next_buf[0] {
+                            91 => {
+                                let mut third_buf = [0u8; 1];
+                                if io::stdin().read(&mut third_buf).is_ok() {
+                                    match third_buf[0] {
+                                        65 => "k".to_string(),
+                                        66 => "j".to_string(),
+                                        _ => "esc".to_string(),
+                                    }
+                                } else {
+                                    "esc".to_string()
+                                }
+                            }
+                            _ => "esc".to_string(),
+                        }
+                    } else {
+                        "esc".to_string()
+                    }
+                }
+                b'j' | b'J' => "j".to_string(),
+                b'k' | b'K' => "k".to_string(),
+                b'h' | b'H' => "h".to_string(),
+                b'l' | b'L' => "l".to_string(),
+                b'q' | b'Q' => "q".to_string(),
+                b' ' => " ".to_string(),
+                10 => "enter".to_string(),
+                _ => format!("{}", buf[0] as char),
+            }
+        } else {
+            String::new()
+        };
+
+        if let Some(orig) = orig_termios {
+            let _ = tcsetattr(stdin_fd, TCSAFLUSH, &orig);
+        }
+
+        input.to_lowercase()
     }
 
-    input.to_lowercase()
+    #[cfg(not(unix))]
+    {
+        // Fallback for non-Unix systems (Windows)
+        let mut input = String::new();
+        io::stdin().read_line(&mut input).ok();
+        input.trim().to_lowercase()
+    }
 }
