@@ -47,12 +47,16 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
+            binary: mofish
           - os: macos-latest
             target: x86_64-apple-darwin
+            binary: mofish
           - os: macos-latest
             target: aarch64-apple-darwin
+            binary: mofish
           - os: windows-latest
             target: x86_64-pc-windows-msvc
+            binary: mofish-cli.exe
     steps:
       - uses: actions/checkout@v4
 
@@ -62,10 +66,6 @@ jobs:
       - name: Build release
         run: cargo build -p mofish-cli --release --target ${{ matrix.target }}
 
-      - name: Rename artifact (Windows)
-        if: matrix.os == 'windows-latest'
-        run: Move-Item target/${{ matrix.target }}/release/mofish-cli.exe target/${{ matrix.target }}/release/mofish.exe
-
       - name: Upload Release Asset
         uses: softprops/action-gh-release@v2
         with:
@@ -74,6 +74,6 @@ jobs:
           draft: true
           prerelease: false
           files: |
-            target/${{ matrix.target }}/release/mofish${{ matrix.os == 'windows-latest' && '.exe' || '' }}
+            target/${{ matrix.target }}/release/${{ matrix.binary }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
