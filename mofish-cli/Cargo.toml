@@ -1,0 +1,17 @@
+[package]
+name = "mofish-cli"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "mofish"
+path = "src/main.rs"
+
+[dependencies]
+mofish-core = { path = "../mofish-core" }
+ratatui = "0.26"
+crossterm = "0.26"
+encoding_rs = "0.8"
+encoding_rs_io = "0.1"
+clap = { version = "4", features = ["derive"] }
+termios = "0.3"
