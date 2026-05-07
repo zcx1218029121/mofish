@@ -1,3 +1,4 @@
+use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style, Stylize},
@@ -8,23 +9,27 @@ use ratatui::{
 
 use mofish_core::{db, config, Book, Stock, CliConfig};
 
+/// 面板层级
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Panel {
+    MainList,     // 主列表
+    AddBook,      // 添加书籍对话框
+    EditPath,     // 编辑路径对话框
+    Reader,       // 阅读器
+}
+
+impl Default for Panel {
+    fn default() -> Self {
+        Panel::MainList
+    }
+}
+
 /// 标签页枚举
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Tab {
     Books,
     Stocks,
     Settings,
-}
-
-impl Tab {
-    #[allow(dead_code)]
-    fn title(&self) -> &'static str {
-        match self {
-            Tab::Books => "📚 Books",
-            Tab::Stocks => "📈 Stocks",
-            Tab::Settings => "⚙️ Settings",
-        }
-    }
 }
 
 /// TUI 应用状态
@@ -36,8 +41,10 @@ pub struct App {
     stocks: Vec<Stock>,
     config: CliConfig,
     should_quit: bool,
-    #[allow(dead_code)]
     reading_book: Option<Book>,
+    current_panel: Panel,
+    add_book_path: String,
+    edit_path_value: String,
 }
 
 impl App {
@@ -65,6 +72,9 @@ impl App {
             config,
             should_quit: false,
             reading_book: None,
+            current_panel: Panel::MainList,
+            add_book_path: String::new(),
+            edit_path_value: String::new(),
         }
     }
 
@@ -72,15 +82,18 @@ impl App {
         self.books = db::get_all_books().unwrap_or_default();
         self.stocks = db::get_all_stocks().unwrap_or_default();
         
-        if !self.books.is_empty() {
+        if !self.books.is_empty() && self.book_list_state.selected().is_none() {
             self.book_list_state.select(Some(0));
         }
-        if !self.stocks.is_empty() {
+        if !self.stocks.is_empty() && self.stock_list_state.selected().is_none() {
             self.stock_list_state.select(Some(0));
         }
     }
 
     fn next_item(&mut self) {
+        if self.current_panel != Panel::MainList {
+            return;
+        }
         match self.current_tab {
             Tab::Books => {
                 if let Some(i) = self.book_list_state.selected() {
@@ -103,6 +116,9 @@ impl App {
     }
 
     fn prev_item(&mut self) {
+        if self.current_panel != Panel::MainList {
+            return;
+        }
         match self.current_tab {
             Tab::Books => {
                 if let Some(i) = self.book_list_state.selected() {
@@ -125,6 +141,9 @@ impl App {
     }
 
     fn select_item(&mut self) {
+        if self.current_panel != Panel::MainList {
+            return;
+        }
         match self.current_tab {
             Tab::Books => {
                 if let Some(i) = self.book_list_state.selected() {
@@ -135,8 +154,132 @@ impl App {
                     }
                 }
             }
-            Tab::Stocks => {}
-            Tab::Settings => {}
+            Tab::Stocks | Tab::Settings => {}
+        }
+    }
+
+    /// 关闭当前面板，返回主列表
+    fn close_panel(&mut self) {
+        match self.current_panel {
+            Panel::MainList => {
+                // 在主列表按 Esc/q 退出程序
+                self.should_quit = true;
+            }
+            Panel::AddBook | Panel::EditPath => {
+                self.current_panel = Panel::MainList;
+                self.add_book_path.clear();
+                self.edit_path_value.clear();
+            }
+            Panel::Reader => {}
+        }
+    }
+
+    /// 打开添加书籍对话框
+    fn open_add_book(&mut self) {
+        self.current_panel = Panel::AddBook;
+        self.add_book_path.clear();
+    }
+
+    /// 打开编辑路径对话框
+    fn open_edit_path(&mut self, book: &Book) {
+        self.current_panel = Panel::EditPath;
+        self.edit_path_value = book.path.clone();
+    }
+
+    /// 提交添加书籍
+    fn submit_add_book(&mut self) {
+        if self.add_book_path.trim().is_empty() {
+            return;
+        }
+        let input_path = self.add_book_path.trim();
+        
+        // 判断是文件还是目录
+        let path_obj = std::path::Path::new(input_path);
+        
+        if path_obj.is_dir() {
+            // 扫描目录添加书籍
+            if let Ok(entries) = std::fs::read_dir(path_obj) {
+                for entry in entries.flatten() {
+                    let entry_path = entry.path();
+                    if entry_path.is_file() {
+                        let ext = entry_path.extension()
+                            .and_then(|e| e.to_str())
+                            .unwrap_or("")
+                            .to_lowercase();
+                        if ["txt", "md", "epub"].contains(&ext.as_str()) {
+                            let title = entry_path.file_stem()
+                                .and_then(|s| s.to_str())
+                                .unwrap_or("Unknown")
+                                .to_string();
+                            if let Err(e) = db::add_book(&title, entry_path.to_str().unwrap_or(""), &ext) {
+                                eprintln!("Error adding book: {:?}", e);
+                            }
+                        }
+                    }
+                }
+            }
+        } else if path_obj.is_file() {
+            // 添加单个文件
+            let title = path_obj.file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("Unknown")
+                .to_string();
+            let ext = path_obj.extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("txt")
+                .to_lowercase();
+            if let Err(e) = db::add_book(&title, input_path, &ext) {
+                eprintln!("Error adding book: {:?}", e);
+            }
+        }
+        
+        self.refresh_data();
+        self.current_panel = Panel::MainList;
+        self.add_book_path.clear();
+    }
+
+    /// 提交编辑路径
+    fn submit_edit_path(&mut self) {
+        if self.edit_path_value.trim().is_empty() {
+            return;
+        }
+        if let Some(i) = self.book_list_state.selected() {
+            if i < self.books.len() {
+                let book = &self.books[i];
+                if let Err(e) = db::update_book_path(&book.id, self.edit_path_value.trim()) {
+                    eprintln!("Error updating path: {:?}", e);
+                }
+                self.refresh_data();
+            }
+        }
+        self.current_panel = Panel::MainList;
+        self.edit_path_value.clear();
+    }
+
+    /// 删除当前选中的书籍
+    fn delete_selected_book(&mut self) {
+        if let Some(i) = self.book_list_state.selected() {
+            if i < self.books.len() {
+                let book = &self.books[i];
+                if let Err(e) = db::delete_book(&book.id) {
+                    eprintln!("Error deleting book: {:?}", e);
+                }
+                self.refresh_data();
+            }
+        }
+    }
+
+    /// 计算书籍的实际阅读进度
+    fn calculate_book_progress(book: &Book) -> (f64, usize) {
+        let total_size = std::fs::metadata(&book.path)
+            .map(|m| m.len() as i64)
+            .unwrap_or(100000);
+        
+        if total_size == 0 || book.last_position == 0 {
+            (0.0, 0)
+        } else {
+            let progress = (book.last_position as f64 / total_size as f64).min(1.0);
+            (progress, total_size as usize)
         }
     }
 }
@@ -195,6 +338,7 @@ fn drop_down_to_reader(book: Book) {
         return;
     }
 
+    let total_size = file_content.len();
     let config = config::load_config().unwrap_or_default();
     let mut page_size = config.page_size;
     let mut current_page = (book.last_position as usize / page_size).min(total_lines / page_size);
@@ -235,7 +379,18 @@ fn drop_down_to_reader(book: Book) {
             f.render_widget(content, content_area);
 
             let total_pages = (total_lines / page_size) + if total_lines % page_size > 0 { 1 } else { 0 };
-            let progress = end as f64 / total_lines as f64;
+            
+            // 使用实际字节位置计算进度
+            let bytes_read = lines.iter()
+                .take(end)
+                .map(|l| l.len())
+                .sum::<usize>();
+            let progress = if total_size > 0 {
+                (bytes_read as f64 / total_size as f64).min(1.0)
+            } else {
+                0.0
+            };
+            
             let filled = (progress * 40.0).round() as usize;
             let progress_bar = format!(
                 "{}{} {:>3}%  Page {}/{}",
@@ -249,7 +404,7 @@ fn drop_down_to_reader(book: Book) {
             let status = Paragraph::new(
                 Line::from(vec![
                     Span::raw(progress_bar),
-                    Span::raw("  |  j/k: 翻页  h/l: 字体  q: 退出"),
+                    Span::raw("  |  j/k: 翻页  h/l: 字体  Esc: 退出到列表"),
                 ])
             )
             .block(Block::default().borders(Borders::ALL).title(" Status "));
@@ -349,91 +504,35 @@ pub fn run_tui() {
             
             f.render_widget(tabs_widget, header_area);
 
-            match app.current_tab {
-                Tab::Books => {
-                    if app.books.is_empty() {
-                        let empty = Paragraph::new("No books found.\nUse 'mofish add <path>' or 'mofish scan <dir>' to add books.")
-                            .block(Block::default().borders(Borders::ALL).title(" Books "))
-                            .style(Style::default().fg(Color::Yellow));
-                        f.render_widget(empty, content_area);
-                    } else {
-                        let items: Vec<ListItem> = app.books.iter().map(|book| {
-                            let progress = if book.last_position == 0 {
-                                0.0
-                            } else {
-                                (book.last_position as f64 / 100000.0).min(1.0)
-                            };
-                            let progress_bar = format!(
-                                "[{}{}]",
-                                "█".repeat((progress * 10.0).round() as usize),
-                                "░".repeat(10 - (progress * 10.0).round() as usize)
-                            );
-                            let title = if book.title.len() > 40 {
-                                format!("{}...", &book.title[..37])
-                            } else {
-                                book.title.clone()
-                            };
-                            ListItem::new(Line::from(vec![
-                                Span::raw(format!("📚 {} ", title)),
-                                Span::raw(progress_bar).cyan(),
-                                Span::raw(format!(" {:>3}%", (progress * 100.0) as i32)),
-                            ]))
-                        }).collect();
-                        
-                        let list = List::new(items)
-                            .block(Block::default().borders(Borders::ALL).title(" Books "))
-                            .highlight_style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD));
-                        
-                        f.render_stateful_widget(list, content_area, &mut app.book_list_state);
-                    }
+            // 根据当前面板渲染不同内容
+            match app.current_panel {
+                Panel::MainList => {
+                    app.render_main_list(f, content_area);
                 }
-                Tab::Stocks => {
-                    if app.stocks.is_empty() {
-                        let empty = Paragraph::new("No stocks in your list.\nUse 'mofish stock add <code>' to add stocks.")
-                            .block(Block::default().borders(Borders::ALL).title(" Stocks "))
-                            .style(Style::default().fg(Color::Yellow));
-                        f.render_widget(empty, content_area);
-                    } else {
-                        let items: Vec<ListItem> = app.stocks.iter().map(|stock| {
-                            ListItem::new(Line::from(vec![
-                                Span::raw(format!("📈 {} ", stock.name)),
-                                Span::raw(stock.code.as_str()).yellow(),
-                            ]))
-                        }).collect();
-                        
-                        let list = List::new(items)
-                            .block(Block::default().borders(Borders::ALL).title(" Stocks "))
-                            .highlight_style(Style::default().fg(Color::Green).add_modifier(Modifier::BOLD));
-                        
-                        f.render_stateful_widget(list, content_area, &mut app.stock_list_state);
-                    }
+                Panel::AddBook => {
+                    app.render_add_book_dialog(f, content_area);
                 }
-                Tab::Settings => {
-                    let settings_content = vec![
-                        Line::from(""),
-                        Line::from(Span::raw("  ⚙️ Settings Panel")),
-                        Line::from(""),
-                        Line::from(Span::raw(format!("  Page Size: {} lines", app.config.page_size))),
-                        Line::from(""),
-                        Line::from(Span::raw("  (Settings editing coming soon...)")).gray(),
-                    ];
-                    let settings = Paragraph::new(settings_content)
-                        .block(Block::default().borders(Borders::ALL).title(" Settings "));
-                    f.render_widget(settings, content_area);
+                Panel::EditPath => {
+                    app.render_edit_path_dialog(f, content_area);
                 }
+                Panel::Reader => {}
             }
 
-            let (tab_hint, item_count) = match app.current_tab {
-                Tab::Books => ("📚", app.books.len()),
-                Tab::Stocks => ("📈", app.stocks.len()),
-                Tab::Settings => ("⚙️", 0),
+            // 底部状态栏
+            let (tab_hint, item_count, panel_hint) = match app.current_panel {
+                Panel::MainList => {
+                    match app.current_tab {
+                        Tab::Books => ("📚", app.books.len(), "j/k: 导航  Enter: 打开  a: 添加  d: 删除  e: 编辑路径  Tab: 切换  Esc: 退出"),
+                        Tab::Stocks => ("📈", app.stocks.len(), "j/k: 导航  Tab: 切换  Esc: 退出"),
+                        Tab::Settings => ("⚙️", 0, "h/l: 调整PageSize  r: 刷新  Esc: 退出"),
+                    }
+                }
+                Panel::AddBook => ("➕", 0, "输入路径后 Enter 确认  Esc: 取消"),
+                Panel::EditPath => ("✏️", 0, "输入路径后 Enter 确认  Esc: 取消"),
+                Panel::Reader => ("📖", 0, ""),
             };
             
-            let status_text = format!(
-                " {} {} items  |  j/k: 导航  Enter: 打开  Tab: 切换标签  q: 退出",
-                tab_hint,
-                item_count
-            );
+            let status_text = format!(" {} {} items  |  {}", tab_hint, item_count, panel_hint);
             
             let status = Paragraph::new(Line::from(Span::raw(status_text)))
                 .block(Block::default().borders(Borders::ALL).title(" Command "))
@@ -442,34 +541,17 @@ pub fn run_tui() {
         }).ok();
 
         if let Event::Key(key) = event::read().unwrap() {
-            match key.code {
-                KeyCode::Tab => {
-                    app.current_tab = match app.current_tab {
-                        Tab::Books => Tab::Stocks,
-                        Tab::Stocks => Tab::Settings,
-                        Tab::Settings => Tab::Books,
-                    };
+            match app.current_panel {
+                Panel::MainList => {
+                    app.handle_main_list_key(key);
                 }
-                KeyCode::Char('j') | KeyCode::Down => {
-                    app.next_item();
+                Panel::AddBook => {
+                    app.handle_add_book_key(key);
                 }
-                KeyCode::Char('k') | KeyCode::Up => {
-                    app.prev_item();
+                Panel::EditPath => {
+                    app.handle_edit_path_key(key);
                 }
-                KeyCode::Enter => {
-                    app.select_item();
-                    app.refresh_data();
-                }
-                KeyCode::Char('1') => app.current_tab = Tab::Books,
-                KeyCode::Char('2') => app.current_tab = Tab::Stocks,
-                KeyCode::Char('3') => app.current_tab = Tab::Settings,
-                KeyCode::Char('r') | KeyCode::Char('R') => {
-                    app.refresh_data();
-                }
-                KeyCode::Char('q') | KeyCode::Esc => {
-                    app.should_quit = true;
-                }
-                _ => {}
+                Panel::Reader => {}
             }
         }
     }
@@ -481,4 +563,261 @@ pub fn run_tui() {
         DisableMouseCapture
     ).ok();
     execute!(terminal.backend_mut(), crossterm::cursor::Show).ok();
+}
+
+/// 渲染主列表
+impl App {
+    fn render_main_list(&self, f: &mut ratatui::Frame, content_area: Rect) {
+        match self.current_tab {
+            Tab::Books => {
+                if self.books.is_empty() {
+                    let empty = Paragraph::new("No books found.\nPress 'a' to add books by path, or 's' to scan a directory.")
+                        .block(Block::default().borders(Borders::ALL).title(" Books "))
+                        .style(Style::default().fg(Color::Yellow));
+                    f.render_widget(empty, content_area);
+                } else {
+                    let items: Vec<ListItem> = self.books.iter().map(|book| {
+                        let (progress, total_size) = Self::calculate_book_progress(book);
+                        let progress_bar = format!(
+                            "[{}{}]",
+                            "█".repeat((progress * 10.0).round() as usize),
+                            "░".repeat(10 - (progress * 10.0).round() as usize)
+                        );
+                        let title = if book.title.len() > 30 {
+                            format!("{}...", &book.title[..27])
+                        } else {
+                            book.title.clone()
+                        };
+                        // 格式化文件大小
+                        let size_str = if total_size > 1024 * 1024 {
+                            format!("{:.1}MB", total_size as f64 / (1024.0 * 1024.0))
+                        } else if total_size > 1024 {
+                            format!("{:.1}KB", total_size as f64 / 1024.0)
+                        } else {
+                            format!("{}B", total_size)
+                        };
+                        
+                        ListItem::new(Line::from(vec![
+                            Span::raw(format!("📚 {} ", title)),
+                            Span::raw(size_str).dim(),
+                            Span::raw(" "),
+                            Span::raw(progress_bar).cyan(),
+                            Span::raw(format!(" {:>3}%", (progress * 100.0) as i32)),
+                        ]))
+                    }).collect();
+                    
+                    let list = List::new(items)
+                        .block(Block::default().borders(Borders::ALL).title(" Books "))
+                        .highlight_style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD));
+                    
+                    f.render_stateful_widget(list, content_area, &mut self.book_list_state.clone());
+                }
+            }
+            Tab::Stocks => {
+                if self.stocks.is_empty() {
+                    let empty = Paragraph::new("No stocks in your list.\nUse 'mofish stock add <code>' to add stocks.")
+                        .block(Block::default().borders(Borders::ALL).title(" Stocks "))
+                        .style(Style::default().fg(Color::Yellow));
+                    f.render_widget(empty, content_area);
+                } else {
+                    let items: Vec<ListItem> = self.stocks.iter().map(|stock| {
+                        ListItem::new(Line::from(vec![
+                            Span::raw(format!("📈 {} ", stock.name)),
+                            Span::raw(stock.code.as_str()).yellow(),
+                        ]))
+                    }).collect();
+                    
+                    let list = List::new(items)
+                        .block(Block::default().borders(Borders::ALL).title(" Stocks "))
+                        .highlight_style(Style::default().fg(Color::Green).add_modifier(Modifier::BOLD));
+                    
+                    f.render_stateful_widget(list, content_area, &mut self.stock_list_state.clone());
+                }
+            }
+            Tab::Settings => {
+                let settings_content = vec![
+                    Line::from(""),
+                    Line::from(Span::raw("  ⚙️ Settings Panel").bold()),
+                    Line::from(""),
+                    Line::from(Span::raw(format!("  📄 Page Size: {} lines", self.config.page_size))),
+                    Line::from(""),
+                    Line::from(Span::raw("  h: 减少5行  |  l: 增加5行").cyan()),
+                    Line::from(Span::raw("  r: 刷新数据").cyan()),
+                    Line::from(""),
+                    Line::from(Span::raw("  快捷键:").dim()),
+                    Line::from(Span::raw("  Tab: 切换标签  Esc: 退出程序").dim()),
+                ];
+                let settings = Paragraph::new(settings_content)
+                    .block(Block::default().borders(Borders::ALL).title(" Settings "));
+                f.render_widget(settings, content_area);
+            }
+        }
+    }
+
+    fn render_add_book_dialog(&self, f: &mut ratatui::Frame, content_area: Rect) {
+        let dialog_content = vec![
+            Line::from(""),
+            Line::from(Span::raw("  ➕ Add Book").bold()),
+            Line::from(""),
+            Line::from(Span::raw("  Enter the file path or directory path:").cyan()),
+            Line::from(""),
+            Line::from(Span::raw(format!("  > {}", self.add_book_path))),
+            Line::from(""),
+            Line::from(Span::raw("  支持: 单个文件 (txt/md/epub) 或包含书籍的目录").dim()),
+            Line::from(Span::raw("  支持: 目录会自动扫描并添加所有支持的文件").dim()),
+            Line::from(""),
+            Line::from(Span::raw("  Enter: 确认添加  |  Esc: 取消").yellow()),
+        ];
+        
+        let dialog = Paragraph::new(dialog_content)
+            .block(Block::default().borders(Borders::ALL).title(" Add Book "))
+            .style(Style::default().fg(Color::White));
+        f.render_widget(dialog, content_area);
+    }
+
+    fn render_edit_path_dialog(&self, f: &mut ratatui::Frame, content_area: Rect) {
+        let selected_title = self.book_list_state.selected()
+            .and_then(|i| self.books.get(i))
+            .map(|b| b.title.as_str())
+            .unwrap_or("Unknown");
+            
+        let dialog_content = vec![
+            Line::from(""),
+            Line::from(Span::raw("  ✏️ Edit Book Path").bold()),
+            Line::from(""),
+            Line::from(Span::raw(format!("  Book: {}", selected_title)).cyan()),
+            Line::from(""),
+            Line::from(Span::raw("  Enter new path:").yellow()),
+            Line::from(""),
+            Line::from(Span::raw(format!("  > {}", self.edit_path_value))),
+            Line::from(""),
+            Line::from(Span::raw("  Enter: 确认修改  |  Esc: 取消").yellow()),
+        ];
+        
+        let dialog = Paragraph::new(dialog_content)
+            .block(Block::default().borders(Borders::ALL).title(" Edit Path "))
+            .style(Style::default().fg(Color::White));
+        f.render_widget(dialog, content_area);
+    }
+
+    fn handle_main_list_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Tab => {
+                self.current_tab = match self.current_tab {
+                    Tab::Books => Tab::Stocks,
+                    Tab::Stocks => Tab::Settings,
+                    Tab::Settings => Tab::Books,
+                };
+            }
+            KeyCode::Char('j') | KeyCode::Down => {
+                self.next_item();
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                self.prev_item();
+            }
+            KeyCode::Enter => {
+                self.select_item();
+                self.refresh_data();
+            }
+            KeyCode::Char('1') => self.current_tab = Tab::Books,
+            KeyCode::Char('2') => self.current_tab = Tab::Stocks,
+            KeyCode::Char('3') => self.current_tab = Tab::Settings,
+            KeyCode::Char('r') | KeyCode::Char('R') => {
+                self.refresh_data();
+            }
+            // 添加书籍
+            KeyCode::Char('a') | KeyCode::Char('A') => {
+                if self.current_tab == Tab::Books {
+                    self.open_add_book();
+                }
+            }
+            // 删除书籍
+            KeyCode::Char('d') | KeyCode::Char('D') => {
+                if self.current_tab == Tab::Books {
+                    self.delete_selected_book();
+                }
+            }
+            // 编辑路径
+            KeyCode::Char('e') | KeyCode::Char('E') => {
+                if self.current_tab == Tab::Books {
+                    if let Some(i) = self.book_list_state.selected() {
+                        if i < self.books.len() {
+                            let book = self.books[i].clone();
+                            self.open_edit_path(&book);
+                        }
+                    }
+                }
+            }
+            // 设置页面：调整 page_size
+            KeyCode::Char('h') | KeyCode::Left => {
+                if self.current_tab == Tab::Settings {
+                    if self.config.page_size > 10 {
+                        self.config.page_size -= 5;
+                        if let Err(e) = config::save_config(&self.config) {
+                            eprintln!("Error saving config: {:?}", e);
+                        }
+                    }
+                }
+            }
+            KeyCode::Char('l') | KeyCode::Right => {
+                if self.current_tab == Tab::Settings {
+                    if self.config.page_size < 100 {
+                        self.config.page_size += 5;
+                        if let Err(e) = config::save_config(&self.config) {
+                            eprintln!("Error saving config: {:?}", e);
+                        }
+                    }
+                }
+            }
+            // Esc 或 q 返回上级（主列表 -> 退出程序）
+            KeyCode::Esc | KeyCode::Char('q') => {
+                self.close_panel();
+            }
+            _ => {}
+        }
+    }
+
+    fn handle_add_book_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Enter => {
+                self.submit_add_book();
+            }
+            KeyCode::Esc => {
+                self.current_panel = Panel::MainList;
+                self.add_book_path.clear();
+            }
+            KeyCode::Char(c) => {
+                self.add_book_path.push(c);
+            }
+            KeyCode::Backspace => {
+                self.add_book_path.pop();
+            }
+            KeyCode::Delete => {
+                self.add_book_path.clear();
+            }
+            _ => {}
+        }
+    }
+
+    fn handle_edit_path_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Enter => {
+                self.submit_edit_path();
+            }
+            KeyCode::Esc => {
+                self.current_panel = Panel::MainList;
+                self.edit_path_value.clear();
+            }
+            KeyCode::Char(c) => {
+                self.edit_path_value.push(c);
+            }
+            KeyCode::Backspace => {
+                self.edit_path_value.pop();
+            }
+            KeyCode::Delete => {
+                self.edit_path_value.clear();
+            }
+            _ => {}
+        }
+    }
 }

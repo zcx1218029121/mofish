@@ -188,6 +188,25 @@ pub fn update_book_position(id: &str, position: i64) -> Result<()> {
     Ok(())
 }
 
+/// Delete a book by ID
+pub fn delete_book(id: &str) -> Result<()> {
+    let conn_mutex = get_db_connection()?;
+    let conn = conn_mutex.lock().unwrap();
+    conn.execute("DELETE FROM books WHERE id = ?", [id])?;
+    Ok(())
+}
+
+/// Update the path of a book
+pub fn update_book_path(id: &str, path: &str) -> Result<()> {
+    let conn_mutex = get_db_connection()?;
+    let conn = conn_mutex.lock().unwrap();
+    conn.execute(
+        "UPDATE books SET path = ? WHERE id = ?",
+        (path, id),
+    )?;
+    Ok(())
+}
+
 /// Add a new book to the library
 pub fn add_book(title: &str, path: &str, format: &str) -> Result<String> {
     let conn_mutex = get_db_connection()?;
