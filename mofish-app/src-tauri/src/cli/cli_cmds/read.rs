@@ -5,7 +5,7 @@ use std::io::{self, Read};
 use std::fs::File;
 use std::path::Path;
 use encoding_rs::*;
-use termios::{Termios, TCSANOW, TCSAFLUSH, tcsetattr, tcgetattr};
+use termios::{Termios, TCSANOW, TCSAFLUSH, tcsetattr};
 
 pub fn read_book(book_id: &str) {
     let book = match db::get_book_by_id(book_id) {
@@ -75,7 +75,7 @@ pub fn read_book(book_id: &str) {
         return;
     }
 
-    let mut config = config::load_config().unwrap_or_else(|_| CliConfig::default());
+    let config = config::load_config().unwrap_or_else(|_| CliConfig::default());
     let mut page_size = config.page_size;
     let mut current_page = calculate_start_page(book.last_position, page_size, total_lines);
 

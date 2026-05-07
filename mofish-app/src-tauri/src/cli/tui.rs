@@ -17,16 +17,6 @@ pub enum Tab {
     Settings,
 }
 
-impl Tab {
-    fn title(&self) -> &'static str {
-        match self {
-            Tab::Books => "📚 Books",
-            Tab::Stocks => "📈 Stocks",
-            Tab::Settings => "⚙️ Settings",
-        }
-    }
-}
-
 /// TUI 应用状态
 pub struct App {
     current_tab: Tab,
@@ -36,8 +26,6 @@ pub struct App {
     stocks: Vec<Stock>,
     config: CliConfig,
     should_quit: bool,
-    /// 当前正在阅读的书籍
-    reading_book: Option<Book>,
 }
 
 impl App {
@@ -64,7 +52,6 @@ impl App {
             stocks,
             config,
             should_quit: false,
-            reading_book: None,
         }
     }
 
@@ -149,10 +136,11 @@ impl App {
 }
 
 /// 下沉到阅读器模式
+#[allow(dead_code)]
 fn drop_down_to_reader(book: Book) {
     use ratatui::backend::CrosstermBackend;
     use ratatui::Terminal;
-    use std::io::{self, BufReader, Read, stdout};
+    use std::io::{BufReader, Read};
     use crossterm::{
         event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
         execute,
@@ -173,7 +161,7 @@ fn drop_down_to_reader(book: Book) {
     };
 
     let mut file_content = Vec::new();
-    let mut reader = io::BufReader::new(file);
+    let mut reader = BufReader::new(file);
     if reader.read_to_end(&mut file_content).is_err() {
         return;
     }
@@ -210,7 +198,7 @@ fn drop_down_to_reader(book: Book) {
 
     // 进入原始模式
     enable_raw_mode().ok();
-    let mut stdout = stdout();
+    let mut stdout = std::io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture).ok();
 
     let backend = CrosstermBackend::new(stdout);
@@ -313,9 +301,9 @@ fn drop_down_to_reader(book: Book) {
 /// 启动 TUI
 pub fn run_tui() {
     use ratatui::backend::CrosstermBackend;
-    use std::io::{self, stdout, stderr, Write};
+    use std::io::stdout;
     use crossterm::{
-        event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind},
+        event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
         execute,
         terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
     };
@@ -359,18 +347,6 @@ pub fn run_tui() {
             let status_area = main_chunks[2];
 
             // 绘制标签页
-            let tabs = vec![
-                Line::from(Span::raw(" Books ")),
-                Line::from(Span::raw(" Stocks ")),
-                Line::from(Span::raw(" Settings ")),
-            ];
-            
-            let tab_style = match app.current_tab {
-                Tab::Books => Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
-                Tab::Stocks => Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
-                Tab::Settings => Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
-            };
-            
             let titles: Vec<&str> = vec!["📚 Books", "📈 Stocks", "⚙️ Settings"];
             let selected = match app.current_tab {
                 Tab::Books => 0,

@@ -3,8 +3,6 @@ use tauri::{Manager};
 mod cli;
 
 // Re-export mofish_core modules for use by cli
-pub use mofish_core::db;
-pub use mofish_core::config;
 
 pub use cli::run_cli;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, Code, Modifiers, ShortcutState};

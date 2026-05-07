@@ -1,16 +1,17 @@
-use mofish_core::{config, db, CliConfig};
+use mofish_core::{config, db};
 use std::io::{self, Read};
 use std::fs::File;
 use std::path::Path;
 use encoding_rs::*;
-use termios::{Termios, TCSANOW, TCSAFLUSH, tcsetattr, tcgetattr};
+use termios::{Termios, TCSANOW, TCSAFLUSH, tcsetattr};
 
 /// Read a book by ID (command-line reader, not TUI)
+#[allow(dead_code)]
 pub fn read_book(book_id: &str) {
     let book = match db::get_book_by_id(book_id) {
         Ok(Some(b)) => b,
         Ok(None) => {
-            println!("Book not found");
+            println!("{}", "Book not found");
             return;
         }
         Err(e) => {
@@ -116,6 +117,7 @@ pub fn read_book(book_id: &str) {
     }
 }
 
+#[allow(dead_code)]
 fn calculate_start_page(position: i64, page_size: usize, total_lines: usize) -> usize {
     if total_lines == 0 {
         return 0;
@@ -123,6 +125,7 @@ fn calculate_start_page(position: i64, page_size: usize, total_lines: usize) -> 
     ((position as usize) / page_size).min(total_lines / page_size)
 }
 
+#[allow(dead_code)]
 fn display_page(lines: &[&str], page: usize, page_size: usize, total_lines: usize, title: &str) {
     clear_screen();
     println!("📖 {}\n", title);
@@ -148,11 +151,13 @@ fn display_page(lines: &[&str], page: usize, page_size: usize, total_lines: usiz
     );
 }
 
+#[allow(dead_code)]
 fn clear_screen() {
     print!("\x1B[2J\x1B[H");
     io::Write::flush(&mut io::stdout()).ok();
 }
 
+#[allow(dead_code)]
 fn get_input() -> String {
     let stdin_fd = 0; // stdin
 

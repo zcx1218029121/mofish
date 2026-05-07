@@ -17,6 +17,7 @@ pub enum Tab {
 }
 
 impl Tab {
+    #[allow(dead_code)]
     fn title(&self) -> &'static str {
         match self {
             Tab::Books => "📚 Books",
@@ -35,6 +36,7 @@ pub struct App {
     stocks: Vec<Stock>,
     config: CliConfig,
     should_quit: bool,
+    #[allow(dead_code)]
     reading_book: Option<Book>,
 }
 
@@ -143,7 +145,7 @@ impl App {
 fn drop_down_to_reader(book: Book) {
     use ratatui::backend::CrosstermBackend;
     use ratatui::Terminal;
-    use std::io::{self, BufReader, Read, stdout};
+    use std::io::{self, Read, stdout};
     use crossterm::{
         event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
         execute,
@@ -293,7 +295,7 @@ fn drop_down_to_reader(book: Book) {
 /// 启动 TUI
 pub fn run_tui() {
     use ratatui::backend::CrosstermBackend;
-    use std::io::{self, stdout, Write};
+    use std::io::stdout;
     use crossterm::{
         event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
         execute,

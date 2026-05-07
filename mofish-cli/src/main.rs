@@ -4,7 +4,7 @@ mod cli;
 mod tui;
 mod cli_cmds;
 
-use cli_cmds::{book, read, stock};
+use cli_cmds::{book, stock};
 
 #[derive(Parser)]
 #[command(name = "mofish")]

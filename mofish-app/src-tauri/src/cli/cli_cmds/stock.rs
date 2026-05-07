@@ -93,7 +93,7 @@ pub fn list_stocks() -> Result<(), String> {
 /// - 100.0: Mock base price (reasonable for Chinese stocks)
 /// - 1.5: Mock absolute change value
 /// - 1.52: Mock change percentage (1.52%)
-fn get_stock_quote(code: &str) -> (f64, f64, f64) {
+fn get_stock_quote(_code: &str) -> (f64, f64, f64) {
     // TODO: Fetch real data from Sina Finance API
     // For now, return mock data with realistic values
     (100.0, 1.5, 1.52)
