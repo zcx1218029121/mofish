@@ -1,0 +1,30 @@
+[workspace]
+resolver = "2"
+members = [
+    "mofish-core",
+    "mofish-cli",
+    "mofish-app/src-tauri",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["loaf"]
+license = "MIT"
+
+# Shared dependencies across all crates
+[workspace.dependencies]
+rusqlite = { version = "0.31", features = ["bundled"] }
+dirs = "5"
+uuid = { version = "1.23.1", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+clap = { version = "4", features = ["derive"] }
+colored = "2"
+thiserror = "1"
+anyhow = "1"
+encoding_rs = "0.8"
+termios = "0.3"
+ratatui = { version = "0.26", features = ["crossterm"] }
+crossterm = "0.26"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
