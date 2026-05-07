@@ -1,0 +1,79 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g., v1.0.0)'
+        required: false
+        type: string
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.ver }}
+    steps:
+      - name: Determine version
+        id: version
+        run: |
+          if [[ "${{ github.event.inputs.version }}" != "" ]]; then
+            echo "ver=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "ver=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          fi
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.ver }}
+          name: mofish ${{ steps.version.outputs.ver }}
+          draft: true
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-binaries:
+    needs: create-release
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact: mofish-ubuntu
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            artifact: mofish-macos-intel
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact: mofish-macos-arm
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact: mofish-windows.exe
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust target
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Build release
+        run: |
+          cargo build -p mofish-cli --release --target ${{ matrix.target }}
+          mv target/${{ matrix.target }}/release/mofish-cli.exe target/${{ matrix.target }}/release/${{ matrix.artifact }} 2>/dev/null || true
+          mv target/${{ matrix.target }}/release/mofish target/${{ matrix.target }}/release/${{ matrix.artifact }} 2>/dev/null || true
+
+      - name: Upload Release Asset
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.create-release.outputs.version }}
+          name: mofish ${{ needs.create-release.outputs.version }}
+          draft: true
+          prerelease: false
+          files: |
+            target/${{ matrix.target }}/release/${{ matrix.artifact }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
