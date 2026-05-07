@@ -269,31 +269,36 @@ impl App {
         }
     }
 
-    /// 计算书籍的实际阅读进度
+    /// 计算书籍的实际阅读进度（基于行数而非字节）
     fn calculate_book_progress(book: &Book) -> (f64, usize) {
-        let total_size = std::fs::metadata(&book.path)
-            .map(|m| m.len() as i64)
-            .unwrap_or(100000);
+        use std::io::{BufRead, BufReader};
+        use std::fs::File;
         
-        if total_size == 0 || book.last_position == 0 {
-            (0.0, 0)
+        let file = match File::open(&book.path) {
+            Ok(f) => f,
+            Err(_) => return (0.0, 0),
+        };
+        
+        let reader = BufReader::new(file);
+        let total_lines = reader.lines().count();
+        
+        if total_lines == 0 || book.last_position == 0 {
+            (0.0, total_lines)
         } else {
-            let progress = (book.last_position as f64 / total_size as f64).min(1.0);
-            (progress, total_size as usize)
+            // last_position 是行偏移量
+            let current_line = book.last_position as usize;
+            let progress = (current_line as f64 / total_lines as f64).min(1.0);
+            (progress, total_lines)
         }
     }
 }
 
-/// 下沉到阅读器模式
+/// 下沉到阅读器模式（在已有终端上绘制，不重复进入alternate screen）
 fn drop_down_to_reader(book: Book) {
     use ratatui::backend::CrosstermBackend;
     use ratatui::Terminal;
     use std::io::{self, Read, stdout};
-    use crossterm::{
-        event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
-        execute,
-        terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
-    };
+    use crossterm::event::{self, Event, KeyCode};
     use encoding_rs::*;
     use std::fs::File;
 
@@ -343,10 +348,7 @@ fn drop_down_to_reader(book: Book) {
     let mut page_size = config.page_size;
     let mut current_page = (book.last_position as usize / page_size).min(total_lines / page_size);
 
-    enable_raw_mode().ok();
-    let mut stdout = stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture).ok();
-
+    let stdout = stdout();
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend).unwrap();
 
@@ -443,8 +445,6 @@ fn drop_down_to_reader(book: Book) {
         }
     }
 
-    disable_raw_mode().ok();
-    execute!(terminal.backend_mut(), LeaveAlternateScreen, DisableMouseCapture).ok();
 }
 
 /// 启动 TUI
