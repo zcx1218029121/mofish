@@ -2,6 +2,11 @@ use clap::{Parser, Subcommand};
 use colored::Colorize;
 
 pub mod cli_cmds;
+pub mod tui;
+
+// Re-export mofish_core for use by cli_cmds
+pub use mofish_core::db;
+pub use mofish_core::config;
 
 #[derive(Parser)]
 #[command(name = "mofish")]
@@ -13,6 +18,8 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// 启动交互式 TUI 界面
+    tui,
     /// 书籍管理
     book {
         #[command(subcommand)]
@@ -67,6 +74,9 @@ pub fn run_cli() {
     let cli = Cli::parse_from(&args[1..]); // Skip ["mofish"] (cli prefix already checked in main)
 
     match cli.command {
+        Some(Commands::tui) => {
+            tui::run_tui();
+        }
         Some(Commands::book { action }) => match action {
             BookAction::list => {
                 cli_cmds::book::list_books();

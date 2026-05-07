@@ -1,4 +1,4 @@
-use crate::db;
+use mofish_core::db;
 use colored::Colorize;
 
 /// Validates a stock code.

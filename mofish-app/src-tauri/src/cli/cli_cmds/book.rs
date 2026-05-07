@@ -1,4 +1,4 @@
-use crate::db::{self, Book};
+use mofish_core::db::{self, Book};
 use colored::Colorize;
 use std::fs;
 use std::path::Path;

@@ -1,5 +1,5 @@
-use crate::config::{self, CliConfig};
-use crate::db;
+use mofish_core::config::{self, CliConfig};
+use mofish_core::db;
 use colored::Colorize;
 use std::io::{self, Read};
 use std::fs::File;
